@@ -1,8 +1,9 @@
 // main 包是服务启动入口，负责：
 //   1. 加载配置（.env 文件 + 环境变量）
 //   2. 建立数据库连接
-//   3. 初始化各层依赖（service → handler）
-//   4. 注册路由并启动 HTTP 服务器
+//   3. 自动执行数据库迁移（golang-migrate）
+//   4. 初始化各层依赖（service → handler）
+//   5. 注册路由并启动 HTTP 服务器
 package main
 
 import (
@@ -26,6 +27,7 @@ func main() {
 
 	cfg := config.Load()
 	db := database.Connect(cfg)
+	database.Migrate(db)
 
 	// 启动时检查管理员账号，不存在则自动创建
 	var adminCount int64
@@ -102,8 +104,9 @@ func main() {
 		auth.POST("/calculator/dose",             calcH.CalcDose)     // 手动计算
 
 		// AI 分析
-		auth.GET("/ai/usage",                     aiH.GetUsage)       // 查询剩余次数
-		auth.POST("/tanks/:id/ai-analysis",        aiH.Analyze)        // 发起分析
+		auth.GET("/ai/usage",                          aiH.GetUsage)        // 查询剩余次数
+		auth.GET("/tanks/:id/ai-analysis/latest",      aiH.LatestAnalysis)  // 最近一次分析结果
+		auth.POST("/tanks/:id/ai-analysis",            aiH.Analyze)         // 发起分析
 
 		// 资产管理
 		auth.GET("/tanks/:id/assets",  assetH.List)

@@ -23,6 +23,22 @@ func (h *AiHandler) GetUsage(c *gin.Context) {
 	c.JSON(http.StatusOK, h.svc.GetUsage(userID))
 }
 
+// LatestAnalysis GET /api/tanks/:id/ai-analysis/latest — 返回该鱼缸最近一次分析结果
+func (h *AiHandler) LatestAnalysis(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	tankID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的鱼缸 ID"})
+		return
+	}
+	analysis := h.svc.LatestAnalysis(userID, tankID)
+	if analysis == nil {
+		c.JSON(http.StatusNoContent, nil)
+		return
+	}
+	c.JSON(http.StatusOK, analysis)
+}
+
 // Analyze POST /api/tanks/:id/ai-analysis — 对指定鱼缸执行一次 AI 分析
 func (h *AiHandler) Analyze(c *gin.Context) {
 	userID := middleware.GetUserID(c)

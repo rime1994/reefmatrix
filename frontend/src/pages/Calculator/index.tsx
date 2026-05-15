@@ -1,64 +1,86 @@
-// Calculator/index.tsx 添加剂计算器页面
-// 左侧：智能建议（根据最新水质数据自动推算）
-// 右侧：手动计算（用户输入当前值和目标值）
-// 下方：AI 水质分析模块
-import { useState } from 'react'
-import { Card, Select, Row, Col, Form, InputNumber, Button, Table, Tag, Spin, Empty, Divider, Alert, message, Progress, Typography } from 'antd'
-import { BulbOutlined, CalculatorOutlined, RobotOutlined } from '@ant-design/icons'
+// Calculator/index.tsx 计算器页面
+// 上方：智能建议（根据最新水质自动推算，默认选中最早建立的鱼缸）
+// 下方：AI 水质分析（默认展示该鱼缸最后一次分析结果）
+import { useMemo, useState, useEffect } from 'react'
+import {
+  Card, Select, Row, Col, Table, Tag, Spin, Empty, Alert,
+  Button, Progress, Typography, message,
+} from 'antd'
+import { BulbOutlined, RobotOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { tanksApi } from '@/api/tanks'
-import { additivesApi } from '@/api/additives'
 import { calculatorApi } from '@/api/calculator'
 import { aiApi } from '@/api/ai'
 import { PARAMETER_META, type DoseResult } from '@/types'
 
-const { Paragraph } = Typography
+const { Paragraph, Text } = Typography
 
 export default function CalculatorPage() {
-  const [tankId, setTankId] = useState<string>()
-  const [aiTankId, setAiTankId] = useState<string>()
-  const [aiResult, setAiResult] = useState<string>()
-  // 手动计算的历史结果列表，按 additive_id 去重（同一添加剂重算时覆盖）
-  const [manualResults, setManualResults] = useState<DoseResult[]>([])
   const qc = useQueryClient()
 
-  const { data: tanks }     = useQuery({ queryKey: ['tanks'],     queryFn: tanksApi.list })
-  const { data: additives } = useQuery({ queryKey: ['additives'], queryFn: additivesApi.list })
+  const { data: tanks } = useQuery({ queryKey: ['tanks'], queryFn: tanksApi.list })
 
-  const { data: aiUsage, isLoading: usageLoading } = useQuery({
-    queryKey: ['ai', 'usage'],
-    queryFn: aiApi.getUsage,
-  })
+  // 默认鱼缸 = 按 created_at 升序第一个（最早建立）
+  const defaultTankId = useMemo(() => {
+    if (!tanks?.length) return undefined
+    return [...tanks].sort((a, b) =>
+      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    )[0].id
+  }, [tanks])
 
-  const analyzeMutation = useMutation({
-    mutationFn: () => aiApi.analyze(aiTankId!),
-    onSuccess: (res) => {
-      setAiResult(res.content)
-      qc.invalidateQueries({ queryKey: ['ai', 'usage'] })
-    },
-    onError: (err: any) => message.error(err.response?.data?.error ?? '分析失败'),
-  })
+  const [tankId,   setTankId]   = useState<string>()
+  const [aiTankId, setAiTankId] = useState<string>()
 
-  // 智能建议：选中鱼缸后自动发起请求
+  // 鱼缸列表加载完成后，初始化选中项（只在首次加载时设置）
+  useEffect(() => {
+    if (defaultTankId) {
+      setTankId(prev  => prev  ?? defaultTankId)
+      setAiTankId(prev => prev ?? defaultTankId)
+    }
+  }, [defaultTankId])
+
+  // ── 智能建议 ──────────────────────────────────────────────────────────────
   const { data: suggestions, isLoading: suggestLoading } = useQuery({
     queryKey: ['calculator', 'suggest', tankId],
     queryFn: () => calculatorApi.suggest(tankId!),
     enabled: !!tankId,
   })
 
-  const doseMutation = useMutation({
-    mutationFn: calculatorApi.calcDose,
-    onSuccess: (res) => {
-      // 相同添加剂的结果直接覆盖，避免列表堆积旧数据
-      setManualResults(prev => {
-        const filtered = prev.filter(r => r.additive_id !== res.additive_id)
-        return [...filtered, res]
-      })
-    },
-    onError: (err: any) => message.error(err.response?.data?.error ?? '计算失败'),
+  // ── AI 分析 ───────────────────────────────────────────────────────────────
+  const { data: aiUsage } = useQuery({
+    queryKey: ['ai', 'usage'],
+    queryFn: aiApi.getUsage,
   })
 
-  // 结果表格列定义，供智能建议和手动计算共用
+  // 当前选中鱼缸的最新一次分析结果（用于默认展示）
+  const { data: latestAnalysis, isLoading: latestLoading } = useQuery({
+    queryKey: ['ai', 'latest', aiTankId],
+    queryFn: () => aiApi.getLatest(aiTankId!),
+    enabled: !!aiTankId,
+  })
+
+  // 本次新发起的分析结果（覆盖 latestAnalysis 展示）
+  const [freshResult, setFreshResult] = useState<string>()
+
+  // 切换鱼缸时清除本次结果，回落到 latestAnalysis
+  const handleAiTankChange = (id: string) => {
+    setAiTankId(id)
+    setFreshResult(undefined)
+  }
+
+  const analyzeMutation = useMutation({
+    mutationFn: () => aiApi.analyze(aiTankId!),
+    onSuccess: (res) => {
+      setFreshResult(res.content)
+      qc.invalidateQueries({ queryKey: ['ai', 'usage'] })
+      qc.invalidateQueries({ queryKey: ['ai', 'latest', aiTankId] })
+    },
+    onError: (err: any) => message.error(err.response?.data?.error ?? '分析失败'),
+  })
+
+  const displayedResult = freshResult ?? latestAnalysis?.content
+
+  // ── 列定义 ────────────────────────────────────────────────────────────────
   const resultColumns = [
     { title: '添加剂', dataIndex: 'additive_name', key: 'name' },
     {
@@ -94,12 +116,13 @@ export default function CalculatorPage() {
     },
   ]
 
+  const tankOptions = tanks?.map(t => ({ value: t.id, label: t.name }))
   const usedPct = aiUsage ? Math.round((aiUsage.used / aiUsage.limit) * 100) : 0
 
   return (
     <Row gutter={[16, 16]}>
-      {/* 左侧：智能建议面板 */}
-      <Col xs={24} lg={12}>
+      {/* 智能建议 */}
+      <Col xs={24}>
         <Card
           title={<><BulbOutlined style={{ color: '#faad14' }} /> 智能建议</>}
           extra={
@@ -108,7 +131,7 @@ export default function CalculatorPage() {
               style={{ width: 160 }}
               value={tankId}
               onChange={setTankId}
-              options={tanks?.map(t => ({ value: t.id, label: t.name }))}
+              options={tankOptions}
             />
           }
         >
@@ -136,53 +159,28 @@ export default function CalculatorPage() {
         </Card>
       </Col>
 
-      {/* 右侧：手动计算面板 */}
-      <Col xs={24} lg={12}>
-        <Card title={<><CalculatorOutlined /> 手动计算</>}>
-          <ManualDoseForm
-            tanks={tanks ?? []}
-            additives={additives ?? []}
-            onCalc={(payload) => doseMutation.mutate(payload)}
-            loading={doseMutation.isPending}
-          />
-          {manualResults.length > 0 && (
-            <>
-              <Divider>计算结果</Divider>
-              <Table
-                dataSource={manualResults}
-                columns={resultColumns}
-                rowKey="additive_id"
-                size="small"
-                pagination={false}
-              />
-            </>
-          )}
-        </Card>
-      </Col>
-
       {/* AI 水质分析 */}
       <Col xs={24}>
         <Card
           title={<><RobotOutlined style={{ color: '#722ed1' }} /> AI 水质分析</>}
           extra={
-            usageLoading ? null : (
+            aiUsage && (
               <span style={{ fontSize: 13, color: '#8c8c8c' }}>
-                已用 {aiUsage?.used ?? 0} / {aiUsage?.limit ?? 100} 次
+                已用 {aiUsage.used} / {aiUsage.limit} 次
               </span>
             )
           }
         >
           <Row gutter={16} align="middle" style={{ marginBottom: 16 }}>
-            <Col xs={24} sm={10} md={8}>
+            <Col xs={24} sm={10} md={7}>
               <Select
-                placeholder="选择要分析的鱼缸"
                 style={{ width: '100%' }}
                 value={aiTankId}
-                onChange={v => { setAiTankId(v); setAiResult(undefined) }}
-                options={tanks?.map(t => ({ value: t.id, label: t.name }))}
+                onChange={handleAiTankChange}
+                options={tankOptions}
               />
             </Col>
-            <Col xs={24} sm={14} md={8}>
+            <Col xs={24} sm={8} md={6}>
               <Button
                 type="primary"
                 icon={<RobotOutlined />}
@@ -191,10 +189,10 @@ export default function CalculatorPage() {
                 onClick={() => analyzeMutation.mutate()}
                 style={{ background: '#722ed1', borderColor: '#722ed1' }}
               >
-                开始分析
+                重新分析
               </Button>
             </Col>
-            <Col xs={24} md={8}>
+            <Col xs={24} md={11}>
               <Progress
                 percent={usedPct}
                 size="small"
@@ -214,61 +212,22 @@ export default function CalculatorPage() {
             </div>
           )}
 
-          {aiResult && !analyzeMutation.isPending && (
+          {!analyzeMutation.isPending && displayedResult && (
             <div style={{ background: '#fafafa', border: '1px solid #f0f0f0', borderRadius: 8, padding: '16px 20px' }}>
-              <Paragraph style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{aiResult}</Paragraph>
+              {!freshResult && latestAnalysis?.created_at && (
+                <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
+                  上次分析：{new Date(latestAnalysis.created_at).toLocaleString('zh-CN')}
+                </Text>
+              )}
+              <Paragraph style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{displayedResult}</Paragraph>
             </div>
           )}
 
-          {!aiTankId && !aiResult && !analyzeMutation.isPending && (
-            <Empty description="请选择鱼缸后点击「开始分析」" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          {!analyzeMutation.isPending && !displayedResult && !latestLoading && (
+            <Empty description="暂无分析记录，点击「重新分析」开始" image={Empty.PRESENTED_IMAGE_SIMPLE} />
           )}
         </Card>
       </Col>
     </Row>
-  )
-}
-
-// ManualDoseForm 手动计算表单（独立组件，保持 CalculatorPage 清晰）
-function ManualDoseForm({ tanks, additives, onCalc, loading }: {
-  tanks: any[]
-  additives: any[]
-  onCalc: (p: any) => void
-  loading: boolean
-}) {
-  const [form] = Form.useForm()
-
-  return (
-    <Form form={form} layout="vertical" onFinish={onCalc}>
-      <Form.Item name="tank_id" label="鱼缸" rules={[{ required: true }]}>
-        <Select options={tanks.map(t => ({ value: t.id, label: t.name }))} />
-      </Form.Item>
-      <Form.Item name="additive_id" label="添加剂" rules={[{ required: true }]}>
-        <Select options={additives.map(a => ({
-          value: a.id,
-          // 显示添加剂名称时附上作用元素，方便选择
-          label: `${a.name}（${PARAMETER_META[a.element as keyof typeof PARAMETER_META]?.label ?? a.element}）`,
-        }))} />
-      </Form.Item>
-      <Row gutter={8}>
-        <Col span={12}>
-          <Form.Item name="current_value" label="当前值" rules={[{ required: true }]}>
-            <InputNumber style={{ width: '100%' }} />
-          </Form.Item>
-        </Col>
-        <Col span={12}>
-          <Form.Item name="target_value" label="目标值" rules={[{ required: true }]}>
-            <InputNumber style={{ width: '100%' }} />
-          </Form.Item>
-        </Col>
-      </Row>
-      {/* 水体容积可选填，为空时后端自动读取鱼缸默认容积 */}
-      <Form.Item name="volume_liters" label="净水量(L) — 留空则用鱼缸默认值">
-        <InputNumber style={{ width: '100%' }} min={1} />
-      </Form.Item>
-      <Button type="primary" htmlType="submit" loading={loading} block>
-        计算用量
-      </Button>
-    </Form>
   )
 }

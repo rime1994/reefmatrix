@@ -45,6 +45,17 @@ func (s *AiService) GetUsage(userID uuid.UUID) UsageInfo {
 	return UsageInfo{Used: used, Limit: aiUsageLimit, Remaining: remaining}
 }
 
+// LatestAnalysis 返回指定鱼缸最近一次 AI 分析记录，不存在时返回 nil
+func (s *AiService) LatestAnalysis(userID, tankID uuid.UUID) *models.AiAnalysis {
+	var analysis models.AiAnalysis
+	err := s.db.Where("user_id = ? AND tank_id = ?", userID, tankID).
+		Order("created_at DESC").First(&analysis).Error
+	if err != nil {
+		return nil
+	}
+	return &analysis
+}
+
 // Analyze 执行一次 AI 分析：校验次数 → 拉数据 → 构建 Prompt → 调用 DeepSeek → 存库
 func (s *AiService) Analyze(userID, tankID uuid.UUID) (*models.AiAnalysis, error) {
 	// 次数限制
