@@ -52,33 +52,23 @@ export default function CalculatorPage() {
     queryFn: aiApi.getUsage,
   })
 
-  // 当前选中鱼缸的最新一次分析结果（用于默认展示）
+  // 当前选中鱼缸的最新一次分析结果，分析完成后 invalidate 刷新，刷新页面也能复现
   const { data: latestAnalysis, isLoading: latestLoading } = useQuery({
     queryKey: ['ai', 'latest', aiTankId],
     queryFn: () => aiApi.getLatest(aiTankId!),
     enabled: !!aiTankId,
   })
 
-  // 本次新发起的分析结果（覆盖 latestAnalysis 展示）
-  const [freshResult, setFreshResult] = useState<string>()
-
-  // 切换鱼缸时清除本次结果，回落到 latestAnalysis
-  const handleAiTankChange = (id: string) => {
-    setAiTankId(id)
-    setFreshResult(undefined)
-  }
-
   const analyzeMutation = useMutation({
     mutationFn: () => aiApi.analyze(aiTankId!),
-    onSuccess: (res) => {
-      setFreshResult(res.content)
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['ai', 'usage'] })
       qc.invalidateQueries({ queryKey: ['ai', 'latest', aiTankId] })
     },
     onError: (err: any) => message.error(err.response?.data?.error ?? '分析失败'),
   })
 
-  const displayedResult = freshResult ?? latestAnalysis?.content
+  const displayedResult = latestAnalysis?.content
 
   // ── 列定义 ────────────────────────────────────────────────────────────────
   const resultColumns = [
@@ -176,7 +166,7 @@ export default function CalculatorPage() {
               <Select
                 style={{ width: '100%' }}
                 value={aiTankId}
-                onChange={handleAiTankChange}
+                onChange={setAiTankId}
                 options={tankOptions}
               />
             </Col>
@@ -214,7 +204,7 @@ export default function CalculatorPage() {
 
           {!analyzeMutation.isPending && displayedResult && (
             <div style={{ background: '#fafafa', border: '1px solid #f0f0f0', borderRadius: 8, padding: '16px 20px' }}>
-              {!freshResult && latestAnalysis?.created_at && (
+              {latestAnalysis?.created_at && (
                 <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
                   上次分析：{new Date(latestAnalysis.created_at).toLocaleString('zh-CN')}
                 </Text>
