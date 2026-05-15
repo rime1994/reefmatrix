@@ -94,7 +94,9 @@ func (s *AiService) Analyze(userID, tankID uuid.UUID) (*models.AiAnalysis, error
 		TankID:   &tankID,
 		Response: content,
 	}
-	s.db.Create(analysis)
+	if err := s.db.Create(analysis).Error; err != nil {
+		return nil, fmt.Errorf("保存分析记录失败: %v", err)
+	}
 
 	return analysis, nil
 }

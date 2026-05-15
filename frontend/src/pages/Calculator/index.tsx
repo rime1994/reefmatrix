@@ -61,9 +61,10 @@ export default function CalculatorPage() {
 
   const analyzeMutation = useMutation({
     mutationFn: () => aiApi.analyze(aiTankId!),
-    onSuccess: () => {
+    onSuccess: (newAnalysis) => {
+      // 直接把 mutation 返回值写入缓存，立即显示结果，无需等待二次 fetch
+      qc.setQueryData(['ai', 'latest', aiTankId], newAnalysis)
       qc.invalidateQueries({ queryKey: ['ai', 'usage'] })
-      qc.invalidateQueries({ queryKey: ['ai', 'latest', aiTankId] })
     },
     onError: (err: any) => message.error(err.response?.data?.error ?? '分析失败'),
   })
