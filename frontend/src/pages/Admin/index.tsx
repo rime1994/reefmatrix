@@ -348,18 +348,27 @@ function ApiKeysTab() {
 }
 
 // ── AI 提示词配置 Tab ─────────────────────────────────────────────────────────
+const DEFAULT_SYSTEM_MESSAGE = '你是一位专业的海水珊瑚缸水质顾问，擅长分析水质数据并给出实用、精准的补充建议。'
+const DEFAULT_INSTRUCTIONS = `请根据以上数据，用中文提供：
+1. 当前水质状态综合评估（2-3句）
+2. 需要重点关注的问题（如有，列出具体参数和原因）
+3. 具体补充建议（品种和大致用量参考）
+4. 建议下次检测时间
+请简明扼要，重点突出，不要重复数据。`
+
 function PromptTab() {
   const qc = useQueryClient()
 
-  const { data: config, isLoading } = useQuery({
+  const { data: config } = useQuery({
     queryKey: ['admin', 'prompt-config'],
     queryFn: adminApi.getPromptConfig,
+    retry: 0,                 // 失败不重试，避免 isLoading 卡住
+    staleTime: 30_000,
   })
 
-  // draft 只在用户主动编辑后才有值，否则直接展示 config（含默认值）
+  // draft 只在用户主动编辑后才有值，否则直接展示 config；API 失败时回落到硬编码默认值
   const [draft, setDraft] = useState<{ system_message: string; instructions: string } | null>(null)
 
-  // 保存成功后清除草稿，回到 config 数据
   const saveMutation = useMutation({
     mutationFn: () => adminApi.updatePromptConfig(draft!),
     onSuccess: () => {
@@ -367,23 +376,28 @@ function PromptTab() {
       setDraft(null)
       message.success('提示词配置已保存')
     },
-    onError: (err: any) => message.error(err.response?.data?.error ?? '保存失败'),
+    onError: (err: any) => {
+      const status = err.response?.status
+      const detail = err.response?.data?.error ?? err.response?.data ?? err.message ?? '保存失败'
+      message.error(`保存失败 (${status ?? 'network'}): ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`)
+    },
   })
 
-  const systemMessage  = draft?.system_message  ?? config?.system_message  ?? ''
-  const instructions   = draft?.instructions    ?? config?.instructions    ?? ''
+  const systemMessage = draft?.system_message
+    ?? (config?.system_message || DEFAULT_SYSTEM_MESSAGE)
+  const instructions  = draft?.instructions
+    ?? (config?.instructions  || DEFAULT_INSTRUCTIONS)
 
   const handleChange = (field: 'system_message' | 'instructions', value: string) => {
     setDraft(prev => ({
-      system_message: prev?.system_message ?? config?.system_message ?? '',
-      instructions:   prev?.instructions   ?? config?.instructions   ?? '',
+      system_message: prev?.system_message ?? systemMessage,
+      instructions:   prev?.instructions   ?? instructions,
       [field]: value,
     }))
   }
 
   return (
     <Card
-      loading={isLoading}
       extra={
         <Button
           type="primary"

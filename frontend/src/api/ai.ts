@@ -26,4 +26,10 @@ export const aiApi = {
 
   analyze: (tankId: string): Promise<AiAnalysis> =>
     api.post(`/tanks/${tankId}/ai-analysis`).then(r => r.data),
+
+  list: (tankId: string): Promise<AiAnalysis[]> =>
+    api.get(`/tanks/${tankId}/ai-analysis`).then(r => r.data),
+
+  deleteAnalysis: (id: string): Promise<void> =>
+    api.delete(`/ai-analysis/${id}`).then(() => {}),
 }
