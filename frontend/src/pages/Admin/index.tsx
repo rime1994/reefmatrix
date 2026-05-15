@@ -1,11 +1,11 @@
-// Admin/index.tsx 管理后台：用户管理 + API 密钥管理
-import { useState } from 'react'
+// Admin/index.tsx 管理后台：用户管理 + API 密钥管理 + AI 提示词配置
+import { useState, useEffect } from 'react'
 import {
   Card, Tabs, Table, Button, Tag, Space, Popconfirm, Modal, Form,
   Input, Select, message, Typography, Badge,
 } from 'antd'
 import {
-  DeleteOutlined, KeyOutlined, UserOutlined, ReloadOutlined,
+  DeleteOutlined, KeyOutlined, UserOutlined, ReloadOutlined, RobotOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
@@ -21,8 +21,9 @@ export default function AdminPage() {
       <div style={{ marginBottom: 24, fontSize: 18, fontWeight: 700 }}>管理后台</div>
       <Tabs
         items={[
-          { key: 'users',   label: <><UserOutlined /> 用户管理</>,  children: <UsersTab /> },
-          { key: 'apikeys', label: <><KeyOutlined />  API 密钥</>,  children: <ApiKeysTab /> },
+          { key: 'users',   label: <><UserOutlined /> 用户管理</>,   children: <UsersTab /> },
+          { key: 'apikeys', label: <><KeyOutlined />  API 密钥</>,   children: <ApiKeysTab /> },
+          { key: 'prompt',  label: <><RobotOutlined /> AI 提示词</>, children: <PromptTab /> },
         ]}
       />
     </div>
@@ -343,5 +344,83 @@ function ApiKeysTab() {
         </Form>
       </Modal>
     </>
+  )
+}
+
+// ── AI 提示词配置 Tab ─────────────────────────────────────────────────────────
+function PromptTab() {
+  const qc = useQueryClient()
+  const [systemMessage, setSystemMessage] = useState('')
+  const [instructions, setInstructions] = useState('')
+
+  const { data: config, isLoading } = useQuery({
+    queryKey: ['admin', 'prompt-config'],
+    queryFn: adminApi.getPromptConfig,
+  })
+
+  // 配置加载完成后填入编辑框
+  useEffect(() => {
+    if (config) {
+      setSystemMessage(config.system_message)
+      setInstructions(config.instructions)
+    }
+  }, [config])
+
+  const saveMutation = useMutation({
+    mutationFn: () => adminApi.updatePromptConfig({ system_message: systemMessage, instructions }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin', 'prompt-config'] })
+      message.success('提示词配置已保存')
+    },
+    onError: (err: any) => message.error(err.response?.data?.error ?? '保存失败'),
+  })
+
+  return (
+    <Card
+      loading={isLoading}
+      extra={
+        <Button
+          type="primary"
+          loading={saveMutation.isPending}
+          onClick={() => saveMutation.mutate()}
+        >
+          保存
+        </Button>
+      }
+    >
+      <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
+        以下配置影响所有用户的 AI 水质分析。数据采集部分（缸信息、水质记录、参数状态、消耗速率、生物资产）由系统自动生成，不可编辑。
+      </Typography.Paragraph>
+
+      <Form layout="vertical">
+        <Form.Item
+          label="系统角色消息（System Message）"
+          extra="发送给 AI 的系统人设，定义 AI 的角色和能力边界"
+        >
+          <Input.TextArea
+            value={systemMessage}
+            onChange={e => setSystemMessage(e.target.value)}
+            autoSize={{ minRows: 3, maxRows: 6 }}
+          />
+        </Form.Item>
+
+        <Form.Item
+          label="分析指令（拼接在水质数据之后）"
+          extra="告诉 AI 需要输出哪些内容、格式要求等"
+        >
+          <Input.TextArea
+            value={instructions}
+            onChange={e => setInstructions(e.target.value)}
+            autoSize={{ minRows: 8, maxRows: 20 }}
+          />
+        </Form.Item>
+      </Form>
+
+      {config?.updated_at && (
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          上次保存：{dayjs(config.updated_at).format('YYYY-MM-DD HH:mm')}
+        </Typography.Text>
+      )}
+    </Card>
   )
 }

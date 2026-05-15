@@ -34,6 +34,42 @@ type UsageInfo struct {
 	Remaining int `json:"remaining"`
 }
 
+// GetPromptConfig 读取提示词配置，表为空时返回默认值（不写库）
+func (s *AiService) GetPromptConfig() models.PromptConfig {
+	var cfg models.PromptConfig
+	if err := s.db.First(&cfg).Error; err != nil {
+		return models.PromptConfig{
+			SystemMessage: models.DefaultSystemMessage,
+			Instructions:  models.DefaultInstructions,
+		}
+	}
+	return cfg
+}
+
+// UpdatePromptConfig 更新（或首次创建）提示词配置
+func (s *AiService) UpdatePromptConfig(systemMessage, instructions string) (models.PromptConfig, error) {
+	var cfg models.PromptConfig
+	err := s.db.First(&cfg).Error
+	if err != nil {
+		// 首次保存：创建新行
+		cfg = models.PromptConfig{
+			SystemMessage: systemMessage,
+			Instructions:  instructions,
+		}
+		if err := s.db.Create(&cfg).Error; err != nil {
+			return cfg, fmt.Errorf("创建提示词配置失败: %v", err)
+		}
+		return cfg, nil
+	}
+	// 更新已有行
+	cfg.SystemMessage = systemMessage
+	cfg.Instructions = instructions
+	if err := s.db.Save(&cfg).Error; err != nil {
+		return cfg, fmt.Errorf("更新提示词配置失败: %v", err)
+	}
+	return cfg, nil
+}
+
 func (s *AiService) GetUsage(userID uuid.UUID) UsageInfo {
 	var count int64
 	s.db.Model(&models.AiAnalysis{}).Where("user_id = ?", userID).Count(&count)
@@ -76,14 +112,17 @@ func (s *AiService) Analyze(userID, tankID uuid.UUID) (*models.AiAnalysis, error
 		return nil, errors.New("鱼缸不存在")
 	}
 
+	// 读取提示词配置（不存在则用默认值）
+	cfg := s.GetPromptConfig()
+
 	// 构建提示词
-	prompt, err := s.buildPrompt(tank, userID)
+	prompt, err := s.buildPrompt(tank, userID, cfg.Instructions)
 	if err != nil {
 		return nil, err
 	}
 
 	// 调用 DeepSeek
-	content, err := callDeepSeekChat(apiKey.KeyValue, prompt)
+	content, err := callDeepSeekChat(apiKey.KeyValue, cfg.SystemMessage, prompt)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +142,7 @@ func (s *AiService) Analyze(userID, tankID uuid.UUID) (*models.AiAnalysis, error
 
 // ── 提示词构建 ────────────────────────────────────────────────────────────────
 
-func (s *AiService) buildPrompt(tank models.Tank, userID uuid.UUID) (string, error) {
+func (s *AiService) buildPrompt(tank models.Tank, userID uuid.UUID, instructions string) (string, error) {
 	// 缸型标签
 	typeLabel := map[string]string{
 		"sps": "SPS（小水螅体珊瑚）",
@@ -214,12 +253,8 @@ func (s *AiService) buildPrompt(tank models.Tank, userID uuid.UUID) (string, err
 		}
 	}
 
-	sb.WriteString("\n请根据以上数据，用中文提供：\n")
-	sb.WriteString("1. 当前水质状态综合评估（2-3句）\n")
-	sb.WriteString("2. 需要重点关注的问题（如有，列出具体参数和原因）\n")
-	sb.WriteString("3. 具体补充建议（品种和大致用量参考）\n")
-	sb.WriteString("4. 建议下次检测时间\n")
-	sb.WriteString("请简明扼要，重点突出，不要重复数据。")
+	sb.WriteString("\n")
+	sb.WriteString(instructions)
 
 	return sb.String(), nil
 }
@@ -324,11 +359,11 @@ func writeConsumptionI(sb *strings.Builder, params []models.WaterParameter, name
 
 // ── DeepSeek API 调用 ─────────────────────────────────────────────────────────
 
-func callDeepSeekChat(apiKey, userPrompt string) (string, error) {
+func callDeepSeekChat(apiKey, systemMessage, userPrompt string) (string, error) {
 	body, _ := json.Marshal(map[string]any{
 		"model": "deepseek-chat",
 		"messages": []map[string]string{
-			{"role": "system", "content": "你是一位专业的海水珊瑚缸水质顾问，擅长分析水质数据并给出实用、精准的补充建议。"},
+			{"role": "system", "content": systemMessage},
 			{"role": "user", "content": userPrompt},
 		},
 		"max_tokens": 1500,

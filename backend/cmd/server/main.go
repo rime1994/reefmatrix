@@ -65,7 +65,7 @@ func main() {
 	aiSvc   := service.NewAiService(db)
 
 	authH     := handler.NewAuthHandler(authSvc)
-	adminH    := handler.NewAdminHandler(db)
+	adminH    := handler.NewAdminHandler(db, aiSvc)
 	aiH       := handler.NewAiHandler(aiSvc)
 	tankH     := handler.NewTankHandler(db)
 	paramH    := handler.NewParameterHandler(db)
@@ -142,6 +142,8 @@ func main() {
 			admin.DELETE("/api-keys/:id",          adminH.DeleteApiKey)
 			admin.PUT("/api-keys/:id/toggle",      adminH.ToggleApiKey)
 			admin.POST("/api-keys/:id/test",       adminH.TestApiKey)
+			admin.GET("/prompt-config",            adminH.GetPromptConfig)
+			admin.PUT("/prompt-config",            adminH.UpdatePromptConfig)
 		}
 	}
 

@@ -22,4 +22,17 @@ export const adminApi = {
 
   testApiKey: (id: string) =>
     client.post<{ ok: boolean; message: string }>(`/admin/api-keys/${id}/test`).then(r => r.data),
+
+  // 提示词配置
+  getPromptConfig: () =>
+    client.get<PromptConfig>('/admin/prompt-config').then(r => r.data),
+  updatePromptConfig: (data: { system_message: string; instructions: string }) =>
+    client.put<PromptConfig>('/admin/prompt-config', data).then(r => r.data),
+}
+
+export interface PromptConfig {
+  id?: string
+  system_message: string
+  instructions: string
+  updated_at?: string
 }

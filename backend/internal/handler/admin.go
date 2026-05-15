@@ -16,13 +16,20 @@ import (
 	"gorm.io/gorm"
 )
 
-// AdminHandler 管理员专属接口：用户管理 + API 密钥管理
+// AdminHandler 管理员专属接口：用户管理 + API 密钥管理 + 提示词配置
 type AdminHandler struct {
-	db *gorm.DB
+	db    *gorm.DB
+	aiSvc aiServiceForAdmin
 }
 
-func NewAdminHandler(db *gorm.DB) *AdminHandler {
-	return &AdminHandler{db: db}
+// aiServiceForAdmin 只暴露 AdminHandler 需要的 AiService 方法，避免循环依赖
+type aiServiceForAdmin interface {
+	GetPromptConfig() models.PromptConfig
+	UpdatePromptConfig(systemMessage, instructions string) (models.PromptConfig, error)
+}
+
+func NewAdminHandler(db *gorm.DB, aiSvc aiServiceForAdmin) *AdminHandler {
+	return &AdminHandler{db: db, aiSvc: aiSvc}
 }
 
 // ListUsers GET /api/admin/users
@@ -217,4 +224,27 @@ func (h *AdminHandler) ToggleApiKey(c *gin.Context) {
 	h.db.Model(&key).Update("is_active", !key.IsActive)
 	key.MaskKey()
 	c.JSON(http.StatusOK, key)
+}
+
+// GetPromptConfig GET /api/admin/prompt-config — 读取当前提示词配置
+func (h *AdminHandler) GetPromptConfig(c *gin.Context) {
+	c.JSON(http.StatusOK, h.aiSvc.GetPromptConfig())
+}
+
+// UpdatePromptConfig PUT /api/admin/prompt-config — 保存提示词配置
+func (h *AdminHandler) UpdatePromptConfig(c *gin.Context) {
+	var body struct {
+		SystemMessage string `json:"system_message" binding:"required"`
+		Instructions  string `json:"instructions"   binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "system_message 和 instructions 不能为空"})
+		return
+	}
+	cfg, err := h.aiSvc.UpdatePromptConfig(body.SystemMessage, body.Instructions)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, cfg)
 }
