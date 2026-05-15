@@ -1,0 +1,8 @@
+DROP TABLE IF EXISTS parameter_ranges;
+DROP TABLE IF EXISTS reminders;
+DROP TABLE IF EXISTS assets;
+DROP TABLE IF EXISTS operations;
+DROP TABLE IF EXISTS additives;
+DROP TABLE IF EXISTS water_parameters;
+DROP TABLE IF EXISTS tanks;
+DROP TABLE IF EXISTS users;

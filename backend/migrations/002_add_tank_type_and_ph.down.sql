@@ -1,0 +1,2 @@
+ALTER TABLE tanks DROP COLUMN IF EXISTS tank_type;
+ALTER TABLE water_parameters DROP COLUMN IF EXISTS ph;
