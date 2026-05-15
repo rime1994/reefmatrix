@@ -1,5 +1,5 @@
 // Admin/index.tsx 管理后台：用户管理 + API 密钥管理 + AI 提示词配置
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import {
   Card, Tabs, Table, Button, Tag, Space, Popconfirm, Modal, Form,
   Input, Select, message, Typography, Badge,
@@ -350,30 +350,36 @@ function ApiKeysTab() {
 // ── AI 提示词配置 Tab ─────────────────────────────────────────────────────────
 function PromptTab() {
   const qc = useQueryClient()
-  const [systemMessage, setSystemMessage] = useState('')
-  const [instructions, setInstructions] = useState('')
 
   const { data: config, isLoading } = useQuery({
     queryKey: ['admin', 'prompt-config'],
     queryFn: adminApi.getPromptConfig,
   })
 
-  // 配置加载完成后填入编辑框
-  useEffect(() => {
-    if (config) {
-      setSystemMessage(config.system_message)
-      setInstructions(config.instructions)
-    }
-  }, [config])
+  // draft 只在用户主动编辑后才有值，否则直接展示 config（含默认值）
+  const [draft, setDraft] = useState<{ system_message: string; instructions: string } | null>(null)
 
+  // 保存成功后清除草稿，回到 config 数据
   const saveMutation = useMutation({
-    mutationFn: () => adminApi.updatePromptConfig({ system_message: systemMessage, instructions }),
+    mutationFn: () => adminApi.updatePromptConfig(draft!),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin', 'prompt-config'] })
+      setDraft(null)
       message.success('提示词配置已保存')
     },
     onError: (err: any) => message.error(err.response?.data?.error ?? '保存失败'),
   })
+
+  const systemMessage  = draft?.system_message  ?? config?.system_message  ?? ''
+  const instructions   = draft?.instructions    ?? config?.instructions    ?? ''
+
+  const handleChange = (field: 'system_message' | 'instructions', value: string) => {
+    setDraft(prev => ({
+      system_message: prev?.system_message ?? config?.system_message ?? '',
+      instructions:   prev?.instructions   ?? config?.instructions   ?? '',
+      [field]: value,
+    }))
+  }
 
   return (
     <Card
@@ -381,6 +387,7 @@ function PromptTab() {
       extra={
         <Button
           type="primary"
+          disabled={!draft}
           loading={saveMutation.isPending}
           onClick={() => saveMutation.mutate()}
         >
@@ -399,7 +406,7 @@ function PromptTab() {
         >
           <Input.TextArea
             value={systemMessage}
-            onChange={e => setSystemMessage(e.target.value)}
+            onChange={e => handleChange('system_message', e.target.value)}
             autoSize={{ minRows: 3, maxRows: 6 }}
           />
         </Form.Item>
@@ -410,7 +417,7 @@ function PromptTab() {
         >
           <Input.TextArea
             value={instructions}
-            onChange={e => setInstructions(e.target.value)}
+            onChange={e => handleChange('instructions', e.target.value)}
             autoSize={{ minRows: 8, maxRows: 20 }}
           />
         </Form.Item>
