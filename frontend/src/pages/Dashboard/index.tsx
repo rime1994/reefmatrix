@@ -19,7 +19,7 @@ import relativeTime from 'dayjs/plugin/relativeTime'
 import { tanksApi } from '@/api/tanks'
 import { parametersApi } from '@/api/parameters'
 import {
-  PARAMETER_META, TANK_TYPE_RANGES, TANK_TYPE_LABEL,
+  PARAMETER_META, TANK_TYPE_RANGES,
   type ParameterKey, type WaterParameter, type Tank, type TankType,
 } from '@/types'
 
@@ -332,22 +332,23 @@ export default function DashboardPage() {
               <Card
                 size="small"
                 style={{ textAlign: 'center', borderColor: status === 'warn' ? '#ffccc7' : undefined }}
+                styles={{ body: { padding: '8px 4px' } }}
               >
                 <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 4, marginBottom: 2 }}>
                   <span style={{ color: '#8c8c8c', fontSize: 12 }}>{meta.label}</span>
                   <Tooltip title={tooltipText}><StatusIcon status={status} /></Tooltip>
                 </div>
-                <div style={{ fontSize: 20, fontWeight: 700, color: entry ? meta.color : '#d9d9d9' }}>
+                                <div style={{ fontSize: 20, fontWeight: 700, color: entry ? meta.color : '#d9d9d9', whiteSpace: 'nowrap' }}>
                   {entry ? entry.value : '—'}
+                  {entry && meta.unit && (
+                    <span style={{ fontSize: 11, fontWeight: 400, marginLeft: 2 }}>{meta.unit}</span>
+                  )}
                 </div>
-                <div style={{ color: '#bfbfbf', fontSize: 11, minHeight: 18 }}>
-                  {meta.unit || ' '}
-                </div>
-                <div style={{ color: '#bfbfbf', fontSize: 10 }}>
+                <div style={{ color: '#bfbfbf', fontSize: 10, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {min}–{max}{meta.unit ? ' ' + meta.unit : ''}
                 </div>
-                <div style={{ color: '#bfbfbf', fontSize: 10, minHeight: 16 }}>
-                  {entry ? dayjs(entry.recordedAt).fromNow() : ' '}
+                <div style={{ color: '#bfbfbf', fontSize: 10, minHeight: 16, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {entry ? dayjs(entry.recordedAt).fromNow() : ' '}
                 </div>
               </Card>
             </Col>

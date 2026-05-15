@@ -24,3 +24,5 @@ type PromptConfig struct {
 	Instructions  string    `gorm:"type:text;not null" json:"instructions"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }
+
+func (PromptConfig) TableName() string { return "prompt_config" }

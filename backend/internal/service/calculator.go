@@ -118,8 +118,10 @@ func (s *CalculatorService) SuggestFromLatest(tankID uuid.UUID, userID uuid.UUID
 	if tankType == "" { tankType = "sps" }
 
 	getTarget := func(element string) (float64, bool) {
-		var pr models.ParameterRange
-		if s.db.Where("tank_id = ? AND parameter = ?", tankID, element).First(&pr).Error == nil {
+		var prs []models.ParameterRange
+		s.db.Where("tank_id = ? AND parameter = ?", tankID, element).Limit(1).Find(&prs)
+		if len(prs) > 0 {
+			pr := prs[0]
 			if pr.MinValue != nil && pr.MaxValue != nil {
 				return (*pr.MinValue + *pr.MaxValue) / 2, true
 			}

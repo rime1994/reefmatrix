@@ -137,7 +137,41 @@ func (s *AiService) Analyze(userID, tankID uuid.UUID) (*models.AiAnalysis, error
 		return nil, fmt.Errorf("保存分析记录失败: %v", err)
 	}
 
+	// 每个鱼缸最多保留 5 条，超出则删除最旧的
+	s.trimAnalyses(tankID, 5)
+
 	return analysis, nil
+}
+
+// trimAnalyses 保留指定鱼缸最新的 keep 条记录，删除多余的旧记录
+func (s *AiService) trimAnalyses(tankID uuid.UUID, keep int) {
+	var old []models.AiAnalysis
+	s.db.Where("tank_id = ?", tankID).Order("created_at DESC").Offset(keep).Find(&old)
+	if len(old) == 0 {
+		return
+	}
+	ids := make([]uuid.UUID, len(old))
+	for i, o := range old {
+		ids[i] = o.ID
+	}
+	s.db.Delete(&models.AiAnalysis{}, "id IN ?", ids)
+}
+
+// ListAnalyses 返回指定鱼缸的所有分析记录（降序）
+func (s *AiService) ListAnalyses(userID, tankID uuid.UUID) []models.AiAnalysis {
+	var list []models.AiAnalysis
+	s.db.Where("user_id = ? AND tank_id = ?", userID, tankID).
+		Order("created_at DESC").Find(&list)
+	return list
+}
+
+// DeleteAnalysis 删除指定分析记录（校验归属）
+func (s *AiService) DeleteAnalysis(userID, id uuid.UUID) error {
+	result := s.db.Where("id = ? AND user_id = ?", id, userID).Delete(&models.AiAnalysis{})
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("记录不存在或无权限删除")
+	}
+	return result.Error
 }
 
 // ── 提示词构建 ────────────────────────────────────────────────────────────────
@@ -168,17 +202,16 @@ func (s *AiService) buildPrompt(tank models.Tank, userID uuid.UUID, instructions
 	var params []models.WaterParameter
 	s.db.Where("tank_id = ?", tank.ID).Order("recorded_at DESC").Limit(10).Find(&params)
 
-	// 资产统计（仅健康状态）
-	type assetRow struct {
-		Category string
-		Count    int64
-	}
-	var assets []assetRow
-	s.db.Model(&models.Asset{}).
-		Select("category, count(*) as count").
-		Where("tank_id = ? AND status = 'healthy'", tank.ID).
-		Group("category").
-		Scan(&assets)
+	// 生物资产（全部状态）
+	var bioAssets []models.Asset
+	s.db.Where("tank_id = ? AND category IN ?", tank.ID,
+		[]string{"fish", "coral", "invertebrate", "other"}).
+		Order("category, name").Find(&bioAssets)
+
+	// 设备资产（全部状态）
+	var equipAssets []models.Asset
+	s.db.Where("tank_id = ? AND category = 'equipment'", tank.ID).
+		Order("name").Find(&equipAssets)
 
 	// 标准范围
 	ranges := models.TankTypeRanges[tank.TankType]
@@ -237,19 +270,141 @@ func (s *AiService) buildPrompt(tank models.Tank, userID uuid.UUID, instructions
 		}
 	}
 
-	// 资产摘要
-	if len(assets) > 0 {
-		sb.WriteString("\n【生物资产摘要（健康状态）】\n")
-		catLabel := map[string]string{
-			"fish": "鱼类", "coral": "珊瑚", "invertebrate": "无脊椎动物",
-			"equipment": "设备", "other": "其他",
+	// ── 生物详情 ──────────────────────────────────────────────────────────────
+	if len(bioAssets) > 0 {
+		// 批量查各生物最新尺寸和生长点（各字段独立取最新非空值）
+		bioIDs := make([]uuid.UUID, len(bioAssets))
+		for i, a := range bioAssets {
+			bioIDs[i] = a.ID
 		}
-		for _, a := range assets {
-			label := catLabel[a.Category]
-			if label == "" {
-				label = a.Category
+		type measRow struct {
+			AssetID uuid.UUID `gorm:"column:asset_id"`
+			Val     *float64  `gorm:"column:val"`
+		}
+		type gpRow struct {
+			AssetID uuid.UUID `gorm:"column:asset_id"`
+			Val     *int      `gorm:"column:val"`
+		}
+		sizeMap := make(map[uuid.UUID]*float64)
+		gpMap := make(map[uuid.UUID]*int)
+		var sizeRows []measRow
+		s.db.Raw(`SELECT DISTINCT ON (asset_id) asset_id, size_cm AS val
+			FROM bio_measurements WHERE asset_id IN (?) AND size_cm IS NOT NULL
+			ORDER BY asset_id, recorded_at DESC`, bioIDs).Scan(&sizeRows)
+		for _, r := range sizeRows {
+			sizeMap[r.AssetID] = r.Val
+		}
+		var gpRows []gpRow
+		s.db.Raw(`SELECT DISTINCT ON (asset_id) asset_id, growth_points AS val
+			FROM bio_measurements WHERE asset_id IN (?) AND growth_points IS NOT NULL
+			ORDER BY asset_id, recorded_at DESC`, bioIDs).Scan(&gpRows)
+		for _, r := range gpRows {
+			gpMap[r.AssetID] = r.Val
+		}
+
+		bioStatusLabel := map[string]string{
+			"healthy": "健康", "sick": "病号", "sold": "已售出",
+			"dead": "死亡", "transferred": "已转缸",
+		}
+		bioCatLabel := map[string]string{
+			"fish": "鱼类", "coral": "珊瑚", "invertebrate": "无脊椎", "other": "其他",
+		}
+		sb.WriteString("\n【生物详情】\n")
+		for _, a := range bioAssets {
+			catL := bioCatLabel[a.Category]
+			if catL == "" {
+				catL = a.Category
 			}
-			sb.WriteString(fmt.Sprintf("- %s：%d 种/件\n", label, a.Count))
+			statusL := bioStatusLabel[a.Status]
+			if statusL == "" {
+				statusL = a.Status
+			}
+			line := fmt.Sprintf("- %s（%s）：%s", a.Name, catL, statusL)
+			if sz := sizeMap[a.ID]; sz != nil {
+				line += fmt.Sprintf("，尺寸 %.1f cm", *sz)
+			}
+			if gp := gpMap[a.ID]; gp != nil {
+				line += fmt.Sprintf("，生长点 %d 个", *gp)
+			}
+			if a.Species != nil && *a.Species != "" {
+				line += fmt.Sprintf("（%s）", *a.Species)
+			}
+			sb.WriteString(line + "\n")
+		}
+	}
+
+	// ── 设备运行状态 ──────────────────────────────────────────────────────────
+	if len(equipAssets) > 0 {
+		equipIDs := make([]uuid.UUID, len(equipAssets))
+		for i, a := range equipAssets {
+			equipIDs[i] = a.ID
+		}
+		// 批量查各设备最新一条运行参数记录
+		var equipLogs []models.EquipmentLog
+		s.db.Raw(`SELECT DISTINCT ON (asset_id) id, asset_id, recorded_at, params, notes, created_at
+			FROM equipment_logs WHERE asset_id IN (?)
+			ORDER BY asset_id, recorded_at DESC`, equipIDs).Scan(&equipLogs)
+		equipLogMap := make(map[uuid.UUID]models.EquipmentLog)
+		for _, l := range equipLogs {
+			equipLogMap[l.AssetID] = l
+		}
+
+		equipTypeLabel := map[string]string{
+			"light": "灯", "wavemaker": "造浪", "skimmer": "蛋分",
+			"dosing_pump": "滴定泵", "calcium_reactor": "钙反应器",
+			"pump": "水泵", "other": "其他",
+		}
+		equipStatusLabel := map[string]string{
+			"healthy": "正常运行", "sick": "故障", "sold": "已售出",
+			"dead": "已报废", "transferred": "已停用",
+		}
+		paramLabel := map[string]string{
+			"photoperiod":   "日开启时长(小时)",
+			"power":         "运行功率(W)",
+			"flow":          "流量(L/h)",
+			"mode":          "模式",
+			"foam_level":    "产沫量",
+			"neck_height":   "颈管高度(mm)",
+			"daily_dose_ml": "日添加量(ml)",
+			"dose_count":    "添加次数(次/天)",
+			"co2_bps":       "CO₂气泡数(泡/秒)",
+			"outlet_ph":     "出水pH",
+			"outlet_kh":     "出水KH(dKH)",
+			"max_flow":      "最大流量(L/h)",
+		}
+
+		sb.WriteString("\n【设备运行状态】\n")
+		for _, a := range equipAssets {
+			typeL := ""
+			if a.EquipmentType != nil {
+				typeL = equipTypeLabel[*a.EquipmentType]
+				if typeL == "" {
+					typeL = *a.EquipmentType
+				}
+			}
+			statusL := equipStatusLabel[a.Status]
+			if statusL == "" {
+				statusL = a.Status
+			}
+			if typeL != "" {
+				sb.WriteString(fmt.Sprintf("- %s（%s）：%s", a.Name, typeL, statusL))
+			} else {
+				sb.WriteString(fmt.Sprintf("- %s：%s", a.Name, statusL))
+			}
+			if log, ok := equipLogMap[a.ID]; ok {
+				parts := make([]string, 0, len(log.Params))
+				for k, v := range log.Params {
+					label := paramLabel[k]
+					if label == "" {
+						label = k
+					}
+					parts = append(parts, fmt.Sprintf("%s %v", label, v))
+				}
+				if len(parts) > 0 {
+					sb.WriteString("，最新参数：" + strings.Join(parts, "、"))
+				}
+			}
+			sb.WriteString("\n")
 		}
 	}
 

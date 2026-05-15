@@ -3,7 +3,7 @@ import axios from 'axios'
 
 const client = axios.create({
   baseURL: '/api',   // vite.config.ts 中已配置 dev server proxy → http://localhost:8080
-  timeout: 10000,
+  timeout: 90000, // AI 分析接口需要较长时间，设为 90s
 })
 
 // 请求拦截器：从 localStorage 读取 JWT token 并注入 Authorization 头

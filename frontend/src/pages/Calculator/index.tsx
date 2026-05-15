@@ -1,19 +1,21 @@
 // Calculator/index.tsx 计算器页面
 // 上方：智能建议（根据最新水质自动推算，默认选中最早建立的鱼缸）
 // 下方：AI 水质分析（默认展示该鱼缸最后一次分析结果）
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState, useEffect, useRef } from 'react'
 import {
   Card, Select, Row, Col, Table, Tag, Spin, Empty, Alert,
-  Button, Progress, Typography, message,
+  Button, Progress, Typography, message, Drawer, List, Popconfirm,
 } from 'antd'
-import { BulbOutlined, RobotOutlined } from '@ant-design/icons'
+import { BulbOutlined, RobotOutlined, HistoryOutlined, DeleteOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import ReactMarkdown from 'react-markdown'
+import dayjs from 'dayjs'
 import { tanksApi } from '@/api/tanks'
 import { calculatorApi } from '@/api/calculator'
-import { aiApi } from '@/api/ai'
+import { aiApi, type AiAnalysis } from '@/api/ai'
 import { PARAMETER_META, type DoseResult } from '@/types'
 
-const { Paragraph, Text } = Typography
+const { Text } = Typography
 
 export default function CalculatorPage() {
   const qc = useQueryClient()
@@ -28,8 +30,12 @@ export default function CalculatorPage() {
     )[0].id
   }, [tanks])
 
-  const [tankId,   setTankId]   = useState<string>()
-  const [aiTankId, setAiTankId] = useState<string>()
+  const [tankId,      setTankId]      = useState<string>()
+  const [aiTankId,    setAiTankId]    = useState<string>()
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [selected,    setSelected]    = useState<AiAnalysis | null>(null)
+  const [countdown,   setCountdown]   = useState(0)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // 鱼缸列表加载完成后，初始化选中项（只在首次加载时设置）
   useEffect(() => {
@@ -59,14 +65,50 @@ export default function CalculatorPage() {
     enabled: !!aiTankId,
   })
 
+  // 历史记录列表（只在抽屉打开时拉取）
+  const { data: historyList, isLoading: historyLoading } = useQuery({
+    queryKey: ['ai', 'history', aiTankId],
+    queryFn: () => aiApi.list(aiTankId!),
+    enabled: !!aiTankId && historyOpen,
+  })
+
   const analyzeMutation = useMutation({
     mutationFn: () => aiApi.analyze(aiTankId!),
     onSuccess: (newAnalysis) => {
-      // 直接把 mutation 返回值写入缓存，立即显示结果，无需等待二次 fetch
       qc.setQueryData(['ai', 'latest', aiTankId], newAnalysis)
       qc.invalidateQueries({ queryKey: ['ai', 'usage'] })
+      qc.invalidateQueries({ queryKey: ['ai', 'history', aiTankId] })
     },
-    onError: (err: any) => message.error(err.response?.data?.error ?? '分析失败'),
+    onError: (err: any) => {
+      const status = err.response?.status
+      const detail = err.response?.data?.error ?? err.response?.data ?? err.message ?? '分析失败'
+      message.error(`分析失败 (${status ?? 'network'}): ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`, 8)
+    },
+  })
+
+  // 分析期间每秒递减倒计时（必须在 analyzeMutation 定义之后）
+  useEffect(() => {
+    if (analyzeMutation.isPending) {
+      setCountdown(30)
+      timerRef.current = setInterval(() => {
+        setCountdown(prev => (prev > 1 ? prev - 1 : 1))
+      }, 1000)
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current)
+    }
+    return () => { if (timerRef.current) clearInterval(timerRef.current) }
+  }, [analyzeMutation.isPending])
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => aiApi.deleteAnalysis(id),
+    onSuccess: (_, id) => {
+      qc.invalidateQueries({ queryKey: ['ai', 'history', aiTankId] })
+      // 如果删的是当前展示的最新记录，也刷新 latest
+      qc.invalidateQueries({ queryKey: ['ai', 'latest', aiTankId] })
+      if (selected?.id === id) setSelected(null)
+      message.success('已删除')
+    },
+    onError: (err: any) => message.error(err.response?.data?.error ?? '删除失败'),
   })
 
   const displayedResult = latestAnalysis?.content
@@ -111,6 +153,7 @@ export default function CalculatorPage() {
   const usedPct = aiUsage ? Math.round((aiUsage.used / aiUsage.limit) * 100) : 0
 
   return (
+    <>
     <Row gutter={[16, 16]}>
       {/* 智能建议 */}
       <Col xs={24}>
@@ -178,9 +221,16 @@ export default function CalculatorPage() {
                 loading={analyzeMutation.isPending}
                 disabled={!aiTankId || (aiUsage?.remaining ?? 1) <= 0}
                 onClick={() => analyzeMutation.mutate()}
-                style={{ background: '#722ed1', borderColor: '#722ed1' }}
+                style={{ background: '#722ed1', borderColor: '#722ed1', marginRight: 8 }}
               >
-                重新分析
+                开始分析
+              </Button>
+              <Button
+                icon={<HistoryOutlined />}
+                disabled={!aiTankId}
+                onClick={() => { setSelected(null); setHistoryOpen(true) }}
+              >
+                历史记录
               </Button>
             </Col>
             <Col xs={24} md={11}>
@@ -199,7 +249,10 @@ export default function CalculatorPage() {
 
           {analyzeMutation.isPending && (
             <div style={{ textAlign: 'center', padding: '32px 0' }}>
-              <Spin tip="AI 正在分析水质数据，请稍候…" />
+              <Spin size="large" />
+              <div style={{ marginTop: 16, color: '#8c8c8c', fontSize: 14 }}>
+                正在接入 DeepSeek，预计还需要 <span style={{ color: '#722ed1', fontWeight: 600 }}>{countdown}</span> 秒…
+              </div>
             </div>
           )}
 
@@ -210,7 +263,9 @@ export default function CalculatorPage() {
                   上次分析：{new Date(latestAnalysis.created_at).toLocaleString('zh-CN')}
                 </Text>
               )}
-              <Paragraph style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{displayedResult}</Paragraph>
+              <div className="ai-markdown">
+                <ReactMarkdown>{displayedResult}</ReactMarkdown>
+              </div>
             </div>
           )}
 
@@ -220,5 +275,79 @@ export default function CalculatorPage() {
         </Card>
       </Col>
     </Row>
+
+      {/* 历史记录抽屉 — 与 Row 同级，整体用 Fragment 包裹 */}
+
+      <Drawer
+        title="AI 分析历史记录"
+        open={historyOpen}
+        onClose={() => { setHistoryOpen(false); setSelected(null) }}
+        width={680}
+        styles={{ body: { padding: 0, display: 'flex', height: '100%' } }}
+      >
+        <div style={{ width: 220, borderRight: '1px solid #f0f0f0', overflowY: 'auto', padding: '8px 0' }}>
+          {historyLoading ? (
+            <Spin style={{ display: 'block', margin: '24px auto' }} />
+          ) : !historyList?.length ? (
+            <Empty description="暂无记录" style={{ marginTop: 40 }} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          ) : (
+            <List
+              dataSource={historyList}
+              renderItem={(item) => (
+                <List.Item
+                  style={{
+                    padding: '10px 16px',
+                    cursor: 'pointer',
+                    background: selected?.id === item.id ? '#f0f0ff' : undefined,
+                    borderLeft: selected?.id === item.id ? '3px solid #722ed1' : '3px solid transparent',
+                  }}
+                  onClick={() => setSelected(item)}
+                >
+                  <div style={{ width: '100%' }}>
+                    <div style={{ fontSize: 13, fontWeight: selected?.id === item.id ? 600 : 400 }}>
+                      {dayjs(item.created_at).format('MM-DD HH:mm')}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {item.content.slice(0, 30)}…
+                    </div>
+                  </div>
+                </List.Item>
+              )}
+            />
+          )}
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+          {selected ? (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {dayjs(selected.created_at).format('YYYY-MM-DD HH:mm:ss')}
+                </Text>
+                <Popconfirm
+                  title="确认删除这条分析记录？"
+                  okText="删除" okButtonProps={{ danger: true }} cancelText="取消"
+                  onConfirm={() => deleteMutation.mutate(selected.id)}
+                >
+                  <Button
+                    size="small"
+                    danger
+                    icon={<DeleteOutlined />}
+                    loading={deleteMutation.isPending}
+                  >
+                    删除
+                  </Button>
+                </Popconfirm>
+              </div>
+              <div className="ai-markdown">
+                <ReactMarkdown>{selected.content}</ReactMarkdown>
+              </div>
+            </>
+          ) : (
+            <Empty description="点击左侧记录查看详情" image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ marginTop: 60 }} />
+          )}
+        </div>
+      </Drawer>
+    </>
   )
 }

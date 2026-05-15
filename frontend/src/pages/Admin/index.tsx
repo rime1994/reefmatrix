@@ -376,7 +376,11 @@ function PromptTab() {
       setDraft(null)
       message.success('提示词配置已保存')
     },
-    onError: (err: any) => message.error(err.response?.data?.error ?? '保存失败'),
+    onError: (err: any) => {
+      const status = err.response?.status
+      const detail = err.response?.data?.error ?? err.response?.data ?? err.message ?? '保存失败'
+      message.error(`保存失败 (${status ?? 'network'}): ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`)
+    },
   })
 
   const systemMessage = draft?.system_message

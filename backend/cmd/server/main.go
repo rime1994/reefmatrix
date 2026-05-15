@@ -69,7 +69,8 @@ func main() {
 	aiH       := handler.NewAiHandler(aiSvc)
 	tankH     := handler.NewTankHandler(db)
 	paramH    := handler.NewParameterHandler(db)
-	assetH    := handler.NewAssetHandler(db)
+	assetH       := handler.NewAssetHandler(db)
+	assetRecordH := handler.NewAssetRecordsHandler(db)
 	reminderH := handler.NewReminderHandler(db)
 	additiveH := handler.NewAdditiveHandler(db)
 	calcH     := handler.NewCalculatorHandler(calcSvc)
@@ -105,14 +106,26 @@ func main() {
 
 		// AI 分析
 		auth.GET("/ai/usage",                          aiH.GetUsage)        // 查询剩余次数
+		auth.GET("/tanks/:id/ai-analysis",             aiH.ListAnalyses)    // 历史记录列表
 		auth.GET("/tanks/:id/ai-analysis/latest",      aiH.LatestAnalysis)  // 最近一次分析结果
 		auth.POST("/tanks/:id/ai-analysis",            aiH.Analyze)         // 发起分析
+		auth.DELETE("/ai-analysis/:id",                aiH.DeleteAnalysis)  // 删除记录
 
 		// 资产管理
 		auth.GET("/tanks/:id/assets",  assetH.List)
 		auth.POST("/tanks/:id/assets", assetH.Create)
-		auth.PUT("/assets/:id",            assetH.Update)
-		auth.DELETE("/assets/:id",         assetH.Delete)
+		auth.PUT("/assets/:id",    assetH.Update)
+		auth.DELETE("/assets/:id", assetH.Delete)
+
+		// 设备运行参数记录
+		auth.GET("/assets/:id/equipment-logs",   assetRecordH.ListEquipmentLogs)
+		auth.POST("/assets/:id/equipment-logs",  assetRecordH.CreateEquipmentLog)
+		auth.DELETE("/equipment-logs/:id",       assetRecordH.DeleteEquipmentLog)
+
+		// 生物尺寸/体重记录
+		auth.GET("/assets/:id/bio-measurements",  assetRecordH.ListBioMeasurements)
+		auth.POST("/assets/:id/bio-measurements", assetRecordH.CreateBioMeasurement)
+		auth.DELETE("/bio-measurements/:id",      assetRecordH.DeleteBioMeasurement)
 
 		// 添加剂配置
 		auth.GET("/additives",      additiveH.List)
