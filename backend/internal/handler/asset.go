@@ -6,29 +6,27 @@ import (
 
 	"github.com/fuqis/reefmatrix/internal/middleware"
 	"github.com/fuqis/reefmatrix/internal/models"
+	"github.com/fuqis/reefmatrix/internal/repository"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
 // AssetHandler 管理鱼缸内的生物和设备资产
+// repo:  所有资产 DB 操作通过接口调用
+// authz: 鱼缸归属权校验，不再持有 *gorm.DB
 type AssetHandler struct {
-	db *gorm.DB
+	repo  repository.AssetRepo
+	authz repository.TankAuthz
 }
 
-func NewAssetHandler(db *gorm.DB) *AssetHandler {
-	return &AssetHandler{db: db}
+func NewAssetHandler(repo repository.AssetRepo, authz repository.TankAuthz) *AssetHandler {
+	return &AssetHandler{repo: repo, authz: authz}
 }
 
 // assetWithBio 在资产基础上附带最新生长记录（仅生物类资产使用）
 type assetWithBio struct {
 	models.Asset
-	LatestBio *bioSummary `json:"latest_bio,omitempty"`
-}
-
-type bioSummary struct {
-	SizeCm       *float64 `json:"size_cm,omitempty"`
-	GrowthPoints *int     `json:"growth_points,omitempty"`
+	LatestBio *repository.BioSummary `json:"latest_bio,omitempty"`
 }
 
 // List GET /api/tanks/:tankId/assets
@@ -44,16 +42,11 @@ func (h *AssetHandler) List(c *gin.Context) {
 		return
 	}
 
-	query := h.db.Where("tank_id = ?", tankID)
-	if category := c.Query("category"); category != "" {
-		query = query.Where("category = ?", category)
+	assets, err := h.repo.List(tankID, c.Query("category"), c.Query("status"))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
-	if status := c.Query("status"); status != "" {
-		query = query.Where("status = ?", status)
-	}
-
-	var assets []models.Asset
-	query.Order("created_at DESC").Find(&assets)
 
 	// 收集生物类资产 ID，批量查询最新生长记录
 	bioIDs := make([]uuid.UUID, 0, len(assets))
@@ -63,52 +56,15 @@ func (h *AssetHandler) List(c *gin.Context) {
 		}
 	}
 
-	type fieldRow struct {
-		AssetID uuid.UUID `gorm:"column:asset_id"`
-		Value   *float64  `gorm:"column:val"`
-	}
-	type gpRow struct {
-		AssetID uuid.UUID `gorm:"column:asset_id"`
-		Value   *int      `gorm:"column:val"`
-	}
-	sizeMap := make(map[uuid.UUID]*float64)
-	gpMap   := make(map[uuid.UUID]*int)
-	if len(bioIDs) > 0 {
-		// 尺寸：各自取最新非空值
-		var sizeRows []fieldRow
-		h.db.Raw(`
-			SELECT DISTINCT ON (asset_id) asset_id, size_cm AS val
-			FROM bio_measurements
-			WHERE asset_id IN (?) AND size_cm IS NOT NULL
-			ORDER BY asset_id, recorded_at DESC
-		`, bioIDs).Scan(&sizeRows)
-		for _, r := range sizeRows {
-			sizeMap[r.AssetID] = r.Value
-		}
-		// 生长点：各自取最新非空值
-		var gpRows []gpRow
-		h.db.Raw(`
-			SELECT DISTINCT ON (asset_id) asset_id, growth_points AS val
-			FROM bio_measurements
-			WHERE asset_id IN (?) AND growth_points IS NOT NULL
-			ORDER BY asset_id, recorded_at DESC
-		`, bioIDs).Scan(&gpRows)
-		for _, r := range gpRows {
-			gpMap[r.AssetID] = r.Value
-		}
+	bioMap, err := h.repo.LatestBioSummaries(bioIDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
 
 	result := make([]assetWithBio, len(assets))
 	for i, a := range assets {
-		result[i] = assetWithBio{Asset: a}
-		sz, hasSz := sizeMap[a.ID]
-		gp, hasGp := gpMap[a.ID]
-		if hasSz || hasGp {
-			result[i].LatestBio = &bioSummary{
-				SizeCm:       sz,
-				GrowthPoints: gp,
-			}
-		}
+		result[i] = assetWithBio{Asset: a, LatestBio: bioMap[a.ID]}
 	}
 	c.JSON(http.StatusOK, result)
 }
@@ -165,7 +121,7 @@ func (h *AssetHandler) Create(c *gin.Context) {
 		Status:        status,
 		Notes:         req.Notes,
 	}
-	if err := h.db.Create(&asset).Error; err != nil {
+	if err := h.repo.Create(&asset); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -180,20 +136,23 @@ func (h *AssetHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-	var asset models.Asset
-	if err := h.db.First(&asset, "id = ?", id).Error; err != nil {
+	asset, err := h.repo.FindByID(id)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "asset not found"})
 		return
 	}
 	if !h.ownsTank(c, asset.TankID) {
 		return
 	}
-	var req map[string]any
-	if err := c.ShouldBindJSON(&req); err != nil {
+	var updates map[string]any
+	if err := c.ShouldBindJSON(&updates); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	h.db.Model(&asset).Updates(req)
+	if err := h.repo.Update(asset, updates); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, asset)
 }
 
@@ -205,24 +164,25 @@ func (h *AssetHandler) Delete(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-	var asset models.Asset
-	if err := h.db.First(&asset, "id = ?", id).Error; err != nil {
+	asset, err := h.repo.FindByID(id)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "asset not found"})
 		return
 	}
 	if !h.ownsTank(c, asset.TankID) {
 		return
 	}
-	h.db.Delete(&asset)
+	if err := h.repo.Delete(asset); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusNoContent, nil)
 }
 
-// ownsTank 验证当前用户是否拥有指定鱼缸
+// ownsTank 验证当前用户是否拥有指定鱼缸，不通过则写入 404 并返回 false
 func (h *AssetHandler) ownsTank(c *gin.Context, tankID uuid.UUID) bool {
 	userID := middleware.GetUserID(c)
-	var count int64
-	h.db.Model(&models.Tank{}).Where("id = ? AND user_id = ?", tankID, userID).Count(&count)
-	if count == 0 {
+	if !h.authz.OwnsTank(userID, tankID) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "tank not found"})
 		return false
 	}

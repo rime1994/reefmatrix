@@ -6,35 +6,30 @@ import (
 
 	"github.com/fuqis/reefmatrix/internal/middleware"
 	"github.com/fuqis/reefmatrix/internal/models"
+	"github.com/fuqis/reefmatrix/internal/repository"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 // TankHandler 管理鱼缸的增删改查
+// 全部 DB 操作通过 TankRepo 接口调用，handler 不再持有 *gorm.DB
 type TankHandler struct {
-	db *gorm.DB
+	repo repository.TankRepo
 }
 
-func NewTankHandler(db *gorm.DB) *TankHandler {
-	return &TankHandler{db: db}
+func NewTankHandler(repo repository.TankRepo) *TankHandler {
+	return &TankHandler{repo: repo}
 }
 
 // List GET /api/tanks
 // 返回当前用户所有未归档的鱼缸，并附加每个缸的最新水质快照
 func (h *TankHandler) List(c *gin.Context) {
 	userID := middleware.GetUserID(c)
-	var tanks []models.Tank
-	h.db.Where("user_id = ? AND status != 'archived'", userID).
-		Order("created_at ASC").Find(&tanks)
-
-	// 为每个缸单独查询最新水质记录并附加，避免复杂 JOIN
-	for i := range tanks {
-		var latest models.WaterParameter
-		if err := h.db.Where("tank_id = ?", tanks[i].ID).
-			Order("recorded_at DESC").First(&latest).Error; err == nil {
-			tanks[i].LatestParameters = &latest
-		}
+	tanks, err := h.repo.List(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
 	c.JSON(http.StatusOK, tanks)
 }
@@ -43,9 +38,11 @@ func (h *TankHandler) List(c *gin.Context) {
 // 返回当前用户所有已归档的鱼缸，用于设置页面管理
 func (h *TankHandler) ListArchived(c *gin.Context) {
 	userID := middleware.GetUserID(c)
-	var tanks []models.Tank
-	h.db.Where("user_id = ? AND status = 'archived'", userID).
-		Order("updated_at DESC").Find(&tanks)
+	tanks, err := h.repo.ListArchived(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, tanks)
 }
 
@@ -56,7 +53,10 @@ func (h *TankHandler) Restore(c *gin.Context) {
 	if !ok {
 		return
 	}
-	h.db.Model(tank).Update("status", "active")
+	if err := h.repo.Restore(tank); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, tank)
 }
 
@@ -67,10 +67,10 @@ func (h *TankHandler) Purge(c *gin.Context) {
 	if !ok {
 		return
 	}
-	// 先删除关联数据，再删除鱼缸本体
-	h.db.Where("tank_id = ?", tank.ID).Delete(&models.WaterParameter{})
-	h.db.Where("tank_id = ?", tank.ID).Delete(&models.Asset{})
-	h.db.Delete(tank)
+	if err := h.repo.Purge(tank); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusNoContent, nil)
 }
 
@@ -102,7 +102,7 @@ func (h *TankHandler) Create(c *gin.Context) {
 		Description:  req.Description,
 		Status:       "active",
 	}
-	if err := h.db.Create(&tank).Error; err != nil {
+	if err := h.repo.Create(&tank); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -145,7 +145,10 @@ func (h *TankHandler) Update(c *gin.Context) {
 	if req.Description != nil  { updates["description"] = *req.Description }
 	if req.Status != nil       { updates["status"] = *req.Status }
 
-	h.db.Model(&tank).Updates(updates)
+	if err := h.repo.Update(tank, updates); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, tank)
 }
 
@@ -156,11 +159,14 @@ func (h *TankHandler) Delete(c *gin.Context) {
 	if !ok {
 		return
 	}
-	h.db.Model(&tank).Update("status", "archived")
+	if err := h.repo.Archive(tank); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusNoContent, nil)
 }
 
-// getTank 公共辅助方法：从路径参数解析鱼缸 ID 并验证归属权
+// getTank 公共辅助方法：从路径参数解析鱼缸 ID 并通过 repo 验证归属权
 func (h *TankHandler) getTank(c *gin.Context) (*models.Tank, bool) {
 	userID := middleware.GetUserID(c)
 	id, err := uuid.Parse(c.Param("id"))
@@ -168,11 +174,14 @@ func (h *TankHandler) getTank(c *gin.Context) (*models.Tank, bool) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tank id"})
 		return nil, false
 	}
-	var tank models.Tank
-	// 同时过滤 user_id，防止越权访问其他用户的鱼缸
-	if err := h.db.Where("id = ? AND user_id = ?", id, userID).First(&tank).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "tank not found"})
+	tank, err := h.repo.Get(id, userID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "tank not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
 		return nil, false
 	}
-	return &tank, true
+	return tank, true
 }

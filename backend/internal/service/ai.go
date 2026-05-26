@@ -249,6 +249,17 @@ func (s *AiService) buildPrompt(tank models.Tank, userID uuid.UUID, instructions
 		}
 	}
 
+	// 近期操作记录（notes 非空，最多 5 条）
+	var opParams []models.WaterParameter
+	s.db.Where("tank_id = ? AND notes IS NOT NULL AND notes != ''", tank.ID).
+		Order("recorded_at DESC").Limit(5).Find(&opParams)
+	if len(opParams) > 0 {
+		sb.WriteString("\n【近期操作记录】\n")
+		for _, p := range opParams {
+			sb.WriteString(fmt.Sprintf("%s：%s\n", p.RecordedAt.Format("2006-01-02"), *p.Notes))
+		}
+	}
+
 	// 参数状态对照
 	if len(params) > 0 {
 		sb.WriteString("\n【参数状态（对照标准范围）】\n")
@@ -261,7 +272,7 @@ func (s *AiService) buildPrompt(tank models.Tank, userID uuid.UUID, instructions
 
 		// 日间消耗
 		if len(params) >= 2 {
-			sb.WriteString("\n【日间消耗速率（最新两次记录推算，正数=消耗）】\n")
+			sb.WriteString("\n【日间变化速率（最新两次记录推算，正数=下降，负数=上升）】\n")
 			writeConsumptionF(&sb, params, "KH", func(p models.WaterParameter) *float64 { return p.KH }, "dKH")
 			writeConsumptionI(&sb, params, "Ca", func(p models.WaterParameter) *int { return p.Ca }, "ppm")
 			writeConsumptionI(&sb, params, "Mg", func(p models.WaterParameter) *int { return p.Mg }, "ppm")
@@ -408,6 +419,14 @@ func (s *AiService) buildPrompt(tank models.Tank, userID uuid.UUID, instructions
 		}
 	}
 
+	// 上次分析结果（buildPrompt 在新记录写库前调用，此处取到的是上一次的结果）
+	prev := s.LatestAnalysis(userID, tank.ID)
+	if prev != nil {
+		sb.WriteString("\n【上次分析结果（供参考，请与本次数据对比，关注变化趋势）】\n")
+		sb.WriteString(prev.Response)
+		sb.WriteString("\n")
+	}
+
 	sb.WriteString("\n")
 	sb.WriteString(instructions)
 
@@ -521,7 +540,7 @@ func callDeepSeekChat(apiKey, systemMessage, userPrompt string) (string, error) 
 			{"role": "system", "content": systemMessage},
 			{"role": "user", "content": userPrompt},
 		},
-		"max_tokens": 1500,
+		"max_tokens": 3000,
 		"temperature": 0.7,
 	})
 

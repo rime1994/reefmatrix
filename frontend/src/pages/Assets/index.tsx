@@ -278,6 +278,7 @@ function BioMeasureDrawer({ asset, onClose }: { asset: Asset; onClose: () => voi
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['bio-measurements', asset.id] })
+      qc.invalidateQueries({ queryKey: ['assets', asset.tank_id] })
       form.resetFields()
       message.success('记录已添加')
     },
@@ -286,7 +287,10 @@ function BioMeasureDrawer({ asset, onClose }: { asset: Asset; onClose: () => voi
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => bioMeasurementsApi.delete(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['bio-measurements', asset.id] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['bio-measurements', asset.id] })
+      qc.invalidateQueries({ queryKey: ['assets', asset.tank_id] })
+    },
   })
 
   const columns = [

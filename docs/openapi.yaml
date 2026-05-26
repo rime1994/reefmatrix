@@ -1,0 +1,1762 @@
+openapi: 3.0.3
+info:
+  title: ReefMatrix API
+  description: 海水鱼缸管理系统后端接口文档
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8080
+    description: 本地开发环境
+  - url: https://your-domain.com
+    description: 生产环境
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      example:
+        error: "invalid tank id"
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        phone:
+          type: string
+        nickname:
+          type: string
+        avatar_url:
+          type: string
+          nullable: true
+        role:
+          type: string
+          enum: [user, admin]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    AuthResponse:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        token:
+          type: string
+          description: JWT Token
+
+    WaterParameter:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tank_id:
+          type: string
+          format: uuid
+        recorded_at:
+          type: string
+          format: date-time
+        salinity:
+          type: number
+          format: float
+          nullable: true
+          description: 比重 SG，如 1.025
+        temperature:
+          type: number
+          format: float
+          nullable: true
+          description: 水温 °C
+        ph:
+          type: number
+          format: float
+          nullable: true
+        kh:
+          type: number
+          format: float
+          nullable: true
+          description: 碱度 dKH
+        ca:
+          type: integer
+          nullable: true
+          description: 钙离子 ppm
+        mg:
+          type: integer
+          nullable: true
+          description: 镁离子 ppm
+        no3:
+          type: number
+          format: float
+          nullable: true
+          description: 硝酸盐 ppm
+        po4:
+          type: number
+          format: float
+          nullable: true
+          description: 磷酸盐 ppm
+        notes:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    Tank:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        tank_type:
+          type: string
+          enum: [sps, lps, nps]
+        volume_liters:
+          type: number
+          format: float
+        setup_date:
+          type: string
+          format: date
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [active, archived]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        latest_parameters:
+          $ref: '#/components/schemas/WaterParameter'
+          nullable: true
+
+    Asset:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tank_id:
+          type: string
+          format: uuid
+        category:
+          type: string
+          enum: [fish, coral, invertebrate, equipment, other]
+        name:
+          type: string
+        species:
+          type: string
+          nullable: true
+        equipment_type:
+          type: string
+          enum: [light, wavemaker, skimmer, dosing_pump, calcium_reactor, pump, other]
+          nullable: true
+        quantity:
+          type: integer
+        purchase_price:
+          type: number
+          format: float
+          nullable: true
+        current_value:
+          type: number
+          format: float
+          nullable: true
+        purchase_date:
+          type: string
+          format: date
+          nullable: true
+        status:
+          type: string
+          enum: [healthy, sick, sold, dead, transferred]
+        notes:
+          type: string
+          nullable: true
+        image_url:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        latest_bio:
+          type: object
+          nullable: true
+          properties:
+            size_cm:
+              type: number
+              format: float
+              nullable: true
+            growth_points:
+              type: integer
+              nullable: true
+
+    EquipmentLog:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        asset_id:
+          type: string
+          format: uuid
+        recorded_at:
+          type: string
+          format: date-time
+        params:
+          type: object
+          additionalProperties:
+            oneOf:
+              - type: number
+              - type: string
+          description: 动态键值对，根据设备类型不同（如 power、flow、photoperiod 等）
+        notes:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    BioMeasurement:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        asset_id:
+          type: string
+          format: uuid
+        recorded_at:
+          type: string
+          format: date-time
+        size_cm:
+          type: number
+          format: float
+          nullable: true
+        growth_points:
+          type: integer
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    Additive:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        brand:
+          type: string
+          nullable: true
+        element:
+          type: string
+          enum: [kh, ca, mg, no3, po4, other]
+        dose_per_unit:
+          type: number
+          format: float
+          description: 每单位用量在 100L 水中的提升量
+        dose_unit:
+          type: string
+          enum: [ml, g]
+        concentration:
+          type: number
+          format: float
+          nullable: true
+          description: 液体活性成分浓度（%）
+        notes:
+          type: string
+          nullable: true
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    DoseResult:
+      type: object
+      properties:
+        additive_id:
+          type: string
+          format: uuid
+        additive_name:
+          type: string
+        element:
+          type: string
+        dose_unit:
+          type: string
+        required_dose:
+          type: number
+          format: float
+        delta:
+          type: number
+          format: float
+        target_value:
+          type: number
+          format: float
+        volume_liters:
+          type: number
+          format: float
+
+    Reminder:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        tank_id:
+          type: string
+          format: uuid
+          nullable: true
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        is_recurring:
+          type: boolean
+        cron_expr:
+          type: string
+          nullable: true
+          description: 标准 cron 表达式，is_recurring=true 时必填
+        remind_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: 单次提醒时间
+        next_remind_at:
+          type: string
+          format: date-time
+          nullable: true
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        tank:
+          $ref: '#/components/schemas/Tank'
+          nullable: true
+
+    AiAnalysis:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        tank_id:
+          type: string
+          format: uuid
+          nullable: true
+        content:
+          type: string
+          description: AI 分析报告正文
+        created_at:
+          type: string
+          format: date-time
+
+    ApiKey:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        provider:
+          type: string
+          enum: [deepseek, openai]
+        key_masked:
+          type: string
+          description: 脱敏后的 Key（前4位...后4位）
+        is_active:
+          type: boolean
+        created_by:
+          type: string
+          format: uuid
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PromptConfig:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        system_message:
+          type: string
+        instructions:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+
+# ── Paths ────────────────────────────────────────────────────────────────────
+
+paths:
+
+  # ── 认证 ──────────────────────────────────────────────────────────────────
+
+  /api/auth/register:
+    post:
+      tags: [认证]
+      summary: 注册
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, password]
+              properties:
+                phone:
+                  type: string
+                password:
+                  type: string
+                  minLength: 6
+                nickname:
+                  type: string
+      responses:
+        '201':
+          description: 注册成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: 参数错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/auth/login:
+    post:
+      tags: [认证]
+      summary: 登录
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, password]
+              properties:
+                phone:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: 用户名或密码错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/auth/me:
+    get:
+      tags: [认证]
+      summary: 获取当前用户信息
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+
+  /api/auth/password:
+    put:
+      tags: [认证]
+      summary: 修改密码
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [old_password, new_password]
+              properties:
+                old_password:
+                  type: string
+                new_password:
+                  type: string
+                  minLength: 6
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          description: 旧密码错误或参数无效
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── 鱼缸 ──────────────────────────────────────────────────────────────────
+
+  /api/tanks:
+    get:
+      tags: [鱼缸]
+      summary: 获取鱼缸列表（激活状态）
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Tank'
+    post:
+      tags: [鱼缸]
+      summary: 创建鱼缸
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, volume_liters]
+              properties:
+                name:
+                  type: string
+                tank_type:
+                  type: string
+                  enum: [sps, lps, nps]
+                  default: sps
+                volume_liters:
+                  type: number
+                  format: float
+                  minimum: 0.01
+                setup_date:
+                  type: string
+                  format: date
+                description:
+                  type: string
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tank'
+
+  /api/tanks/archived:
+    get:
+      tags: [鱼缸]
+      summary: 获取已归档鱼缸列表
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Tank'
+
+  /api/tanks/{id}:
+    get:
+      tags: [鱼缸]
+      summary: 获取单个鱼缸详情
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tank'
+        '404':
+          description: 未找到
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    put:
+      tags: [鱼缸]
+      summary: 更新鱼缸信息
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                tank_type:
+                  type: string
+                  enum: [sps, lps, nps]
+                volume_liters:
+                  type: number
+                  format: float
+                setup_date:
+                  type: string
+                  format: date
+                description:
+                  type: string
+                status:
+                  type: string
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tank'
+    delete:
+      tags: [鱼缸]
+      summary: 归档鱼缸（软删除）
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: 成功
+
+  /api/tanks/{id}/restore:
+    put:
+      tags: [鱼缸]
+      summary: 恢复归档鱼缸
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 恢复成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tank'
+
+  /api/tanks/{id}/purge:
+    delete:
+      tags: [鱼缸]
+      summary: 彻底删除鱼缸（物理删除，含关联数据）
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: 成功
+
+  # ── 水质记录 ────────────────────────────────────────────────────────────────
+
+  /api/tanks/{id}/parameters:
+    get:
+      tags: [水质记录]
+      summary: 获取水质记录列表
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: 时间范围起点（RFC3339）
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: 时间范围终点（RFC3339）
+      responses:
+        '200':
+          description: 成功，最多返回 100 条，按 recorded_at 升序
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WaterParameter'
+    post:
+      tags: [水质记录]
+      summary: 录入水质数据
+      description: 支持部分录入，所有参数均为可选
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                recorded_at:
+                  type: string
+                  format: date-time
+                  description: 默认为当前时间
+                salinity:
+                  type: number
+                  format: float
+                temperature:
+                  type: number
+                  format: float
+                ph:
+                  type: number
+                  format: float
+                kh:
+                  type: number
+                  format: float
+                ca:
+                  type: integer
+                mg:
+                  type: integer
+                no3:
+                  type: number
+                  format: float
+                po4:
+                  type: number
+                  format: float
+                notes:
+                  type: string
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WaterParameter'
+
+  /api/parameters/{id}:
+    delete:
+      tags: [水质记录]
+      summary: 删除单条水质记录
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: 成功
+
+  # ── 资产 ──────────────────────────────────────────────────────────────────
+
+  /api/tanks/{id}/assets:
+    get:
+      tags: [资产]
+      summary: 获取资产列表
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: category
+          in: query
+          schema:
+            type: string
+            enum: [fish, coral, invertebrate, equipment, other]
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [healthy, sick, sold, dead, transferred]
+      responses:
+        '200':
+          description: 成功，非设备类资产附带最新生长记录
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Asset'
+    post:
+      tags: [资产]
+      summary: 添加资产
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [category, name]
+              properties:
+                category:
+                  type: string
+                  enum: [fish, coral, invertebrate, equipment, other]
+                name:
+                  type: string
+                species:
+                  type: string
+                equipment_type:
+                  type: string
+                  enum: [light, wavemaker, skimmer, dosing_pump, calcium_reactor, pump, other]
+                quantity:
+                  type: integer
+                  default: 1
+                purchase_price:
+                  type: number
+                  format: float
+                current_value:
+                  type: number
+                  format: float
+                purchase_date:
+                  type: string
+                  format: date
+                status:
+                  type: string
+                  default: healthy
+                notes:
+                  type: string
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Asset'
+
+  /api/assets/{id}:
+    put:
+      tags: [资产]
+      summary: 更新资产
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                species:
+                  type: string
+                equipment_type:
+                  type: string
+                quantity:
+                  type: integer
+                purchase_price:
+                  type: number
+                  format: float
+                current_value:
+                  type: number
+                  format: float
+                purchase_date:
+                  type: string
+                  format: date
+                status:
+                  type: string
+                notes:
+                  type: string
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Asset'
+    delete:
+      tags: [资产]
+      summary: 删除资产（物理删除）
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: 成功
+
+  # ── 设备运行日志 ────────────────────────────────────────────────────────────
+
+  /api/assets/{id}/equipment-logs:
+    get:
+      tags: [设备日志]
+      summary: 获取设备运行日志列表
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EquipmentLog'
+    post:
+      tags: [设备日志]
+      summary: 记录设备运行参数
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [params]
+              properties:
+                recorded_at:
+                  type: string
+                  format: date-time
+                  description: 默认为当前时间
+                params:
+                  type: object
+                  additionalProperties:
+                    oneOf:
+                      - type: number
+                      - type: string
+                  example:
+                    photoperiod: 10
+                    power: 150
+                notes:
+                  type: string
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EquipmentLog'
+
+  /api/equipment-logs/{id}:
+    delete:
+      tags: [设备日志]
+      summary: 删除设备运行日志
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  # ── 生物生长记录 ────────────────────────────────────────────────────────────
+
+  /api/assets/{id}/bio-measurements:
+    get:
+      tags: [生长记录]
+      summary: 获取生物生长记录列表
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BioMeasurement'
+    post:
+      tags: [生长记录]
+      summary: 录入生长记录
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                recorded_at:
+                  type: string
+                  format: date-time
+                  description: 默认为当前时间
+                size_cm:
+                  type: number
+                  format: float
+                growth_points:
+                  type: integer
+                  description: 珊瑚生长点数量
+                notes:
+                  type: string
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BioMeasurement'
+
+  /api/bio-measurements/{id}:
+    delete:
+      tags: [生长记录]
+      summary: 删除生长记录
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  # ── 添加剂 ──────────────────────────────────────────────────────────────────
+
+  /api/additives:
+    get:
+      tags: [添加剂]
+      summary: 获取添加剂列表（仅激活状态）
+      responses:
+        '200':
+          description: 成功，按 element 再按 name 排序
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Additive'
+    post:
+      tags: [添加剂]
+      summary: 创建添加剂
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, element, dose_per_unit, dose_unit]
+              properties:
+                name:
+                  type: string
+                brand:
+                  type: string
+                element:
+                  type: string
+                  enum: [kh, ca, mg, no3, po4, other]
+                dose_per_unit:
+                  type: number
+                  format: float
+                  minimum: 0.001
+                  description: 每单位用量在 100L 中的提升量
+                dose_unit:
+                  type: string
+                  enum: [ml, g]
+                concentration:
+                  type: number
+                  format: float
+                notes:
+                  type: string
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Additive'
+
+  /api/additives/{id}:
+    put:
+      tags: [添加剂]
+      summary: 更新添加剂
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                brand:
+                  type: string
+                element:
+                  type: string
+                  enum: [kh, ca, mg, no3, po4, other]
+                dose_per_unit:
+                  type: number
+                  format: float
+                dose_unit:
+                  type: string
+                  enum: [ml, g]
+                concentration:
+                  type: number
+                  format: float
+                notes:
+                  type: string
+                is_active:
+                  type: boolean
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Additive'
+    delete:
+      tags: [添加剂]
+      summary: 停用添加剂（软删除，设 is_active=false）
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: 成功
+
+  # ── 计算器 ──────────────────────────────────────────────────────────────────
+
+  /api/calculator/dose:
+    post:
+      tags: [计算器]
+      summary: 手动计算添加剂用量
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tank_id, additive_id, current_value, target_value]
+              properties:
+                tank_id:
+                  type: string
+                  format: uuid
+                additive_id:
+                  type: string
+                  format: uuid
+                current_value:
+                  type: number
+                  format: float
+                  description: 当前实测值
+                target_value:
+                  type: number
+                  format: float
+                  description: 目标值
+                volume_liters:
+                  type: number
+                  format: float
+                  description: 水体体积，不填则从鱼缸配置读取
+      responses:
+        '200':
+          description: 计算结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DoseResult'
+
+  /api/tanks/{id}/calculator/suggest:
+    get:
+      tags: [计算器]
+      summary: 智能建议（基于最新水质数据自动计算）
+      description: 仅针对 KH、Ca、Mg，使用内置试剂，目标值取用户自定义区间中值或缸型默认值
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 建议列表，仅包含低于目标值的参数；无水质数据时返回空数组
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DoseResult'
+
+  # ── 提醒 ──────────────────────────────────────────────────────────────────
+
+  /api/reminders:
+    get:
+      tags: [提醒]
+      summary: 获取提醒列表
+      parameters:
+        - name: tank_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: 按鱼缸过滤（可选）
+      responses:
+        '200':
+          description: 成功，按 next_remind_at 升序（null 排最后）
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Reminder'
+    post:
+      tags: [提醒]
+      summary: 创建提醒
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                tank_id:
+                  type: string
+                  format: uuid
+                title:
+                  type: string
+                description:
+                  type: string
+                is_recurring:
+                  type: boolean
+                  default: false
+                cron_expr:
+                  type: string
+                  description: is_recurring=true 时必填，标准 cron 格式
+                  example: "0 9 * * 1"
+                remind_at:
+                  type: string
+                  format: date-time
+                  description: is_recurring=false 时必填
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reminder'
+
+  /api/reminders/due:
+    get:
+      tags: [提醒]
+      summary: 获取当前到期的提醒（前端轮询用）
+      responses:
+        '200':
+          description: next_remind_at <= 当前时间的提醒列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Reminder'
+
+  /api/reminders/{id}:
+    put:
+      tags: [提醒]
+      summary: 更新提醒
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                description:
+                  type: string
+                is_recurring:
+                  type: boolean
+                cron_expr:
+                  type: string
+                remind_at:
+                  type: string
+                  format: date-time
+                next_remind_at:
+                  type: string
+                  format: date-time
+                is_active:
+                  type: boolean
+                tank_id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reminder'
+    delete:
+      tags: [提醒]
+      summary: 删除提醒（软删除，设 is_active=false）
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: 成功
+
+  # ── AI 分析 ──────────────────────────────────────────────────────────────────
+
+  /api/ai/usage:
+    get:
+      tags: [AI 分析]
+      summary: 查询 AI 分析用量
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_analyses:
+                    type: integer
+                  remaining_quota:
+                    type: integer
+                  last_analysis_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+
+  /api/tanks/{id}/ai-analysis:
+    get:
+      tags: [AI 分析]
+      summary: 获取历史分析列表
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AiAnalysis'
+    post:
+      tags: [AI 分析]
+      summary: 发起 AI 分析
+      description: 基于该鱼缸最新水质数据、生物详情、设备运行状态生成分析报告
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 分析完成
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiAnalysis'
+
+  /api/tanks/{id}/ai-analysis/latest:
+    get:
+      tags: [AI 分析]
+      summary: 获取最新一条分析结果
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiAnalysis'
+        '204':
+          description: 暂无分析记录
+
+  /api/ai-analysis/{id}:
+    delete:
+      tags: [AI 分析]
+      summary: 删除分析记录
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  # ── 管理后台 ────────────────────────────────────────────────────────────────
+
+  /api/admin/users:
+    get:
+      tags: [管理后台]
+      summary: 获取所有用户列表
+      description: 需要 admin 角色
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+
+  /api/admin/users/{id}:
+    delete:
+      tags: [管理后台]
+      summary: 删除用户
+      description: 不可删除自己
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /api/admin/users/{id}/password:
+    put:
+      tags: [管理后台]
+      summary: 重置用户密码
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [new_password]
+              properties:
+                new_password:
+                  type: string
+                  minLength: 6
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /api/admin/api-keys:
+    get:
+      tags: [管理后台]
+      summary: 获取 AI API Key 列表
+      responses:
+        '200':
+          description: 成功，key_value 不会返回，仅返回脱敏后的 key_masked
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ApiKey'
+    post:
+      tags: [管理后台]
+      summary: 添加 AI API Key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, provider, key_value]
+              properties:
+                name:
+                  type: string
+                provider:
+                  type: string
+                  enum: [deepseek, openai]
+                key_value:
+                  type: string
+                  description: 实际 API Key（存储时加密，不会明文返回）
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKey'
+
+  /api/admin/api-keys/{id}:
+    delete:
+      tags: [管理后台]
+      summary: 删除 API Key
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 成功
+
+  /api/admin/api-keys/{id}/toggle:
+    put:
+      tags: [管理后台]
+      summary: 启用/停用 API Key
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKey'
+
+  /api/admin/api-keys/{id}/test:
+    post:
+      tags: [管理后台]
+      summary: 测试 API Key 连通性
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 测试结果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  message:
+                    type: string
+
+  /api/admin/prompt-config:
+    get:
+      tags: [管理后台]
+      summary: 获取 AI Prompt 配置
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromptConfig'
+    put:
+      tags: [管理后台]
+      summary: 更新 AI Prompt 配置
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [system_message, instructions]
+              properties:
+                system_message:
+                  type: string
+                instructions:
+                  type: string
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromptConfig'

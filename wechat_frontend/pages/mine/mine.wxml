@@ -1,0 +1,20 @@
+<!-- pages/mine/mine.wxml — 个人中心 -->
+<view class="container">
+  <!-- 用户信息 -->
+  <view class="card user-card">
+    <view class="avatar-area">
+      <view class="avatar">{{userInfo.nickname[0] || '?'}}</view>
+    </view>
+    <view class="user-info">
+      <text class="user-name">{{userInfo.nickname || '用户'}}</text>
+      <text class="user-phone">{{userInfo.phone || ''}}</text>
+    </view>
+  </view>
+
+  <!-- 功能列表 -->
+  <view class="card menu-card">
+    <view class="menu-item" bindtap="onLogout">
+      <text class="menu-text" style="color: #ff4d4f;">退出登录</text>
+    </view>
+  </view>
+</view>

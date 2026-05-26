@@ -1,5 +1,5 @@
 import client from './client'
-import type { User, ApiKey } from '@/types'
+import type { User, ApiKey, ReefQuestion } from '@/types'
 
 export const adminApi = {
   // 用户管理
@@ -28,6 +28,20 @@ export const adminApi = {
     client.get<PromptConfig>('/admin/prompt-config').then(r => r.data),
   updatePromptConfig: (data: { system_message: string; instructions: string }) =>
     client.put<PromptConfig>('/admin/prompt-config', data).then(r => r.data),
+
+  // 题库管理（ADM-001）
+  listQuestions: () =>
+    client.get<ReefQuestion[]>('/admin/questions').then(r => r.data),
+  createQuestion: (data: Omit<ReefQuestion, 'id' | 'created_at' | 'updated_at'>) =>
+    client.post<ReefQuestion>('/admin/questions', data).then(r => r.data),
+  updateQuestion: (id: string, data: Partial<Omit<ReefQuestion, 'id' | 'created_at' | 'updated_at'>>) =>
+    client.put<ReefQuestion>(`/admin/questions/${id}`, data).then(r => r.data),
+  deleteQuestion: (id: string) =>
+    client.delete(`/admin/questions/${id}`),
+
+  // 邀请关系（ADM-001）
+  listInviteRelations: () =>
+    client.get<User[]>('/admin/invite-relations').then(r => r.data),
 }
 
 export interface PromptConfig {

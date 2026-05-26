@@ -3,10 +3,19 @@
 // ── 用户 ──────────────────────────────────────────────────────────────────────
 export interface User {
   id: string
-  phone: string
+  phone?: string
+  email?: string
+  username?: string
   nickname: string
   avatar_url?: string
   role: 'user' | 'admin'
+  my_invite_code?: string
+  invited_by?: string
+  registration_path?: string
+  timezone?: string
+  salinity_unit?: string
+  temp_unit?: string
+  theme?: string
   created_at: string
 }
 
@@ -200,6 +209,23 @@ export interface BioMeasurement {
   growth_points?: number
   notes?: string
   created_at: string
+}
+
+// ── 题库 ──────────────────────────────────────────────────────────────────────
+export type QuestionDifficulty = 'easy' | 'medium' | 'hard'
+export type QuestionCategory = 'chemistry' | 'biology' | 'equipment' | 'husbandry'
+
+export interface ReefQuestion {
+  id: string
+  question: string
+  options: string[]   // JSON array ["选项A", "选项B", "选项C", "选项D"]
+  answer: 'A' | 'B' | 'C' | 'D'
+  explanation?: string
+  difficulty: QuestionDifficulty
+  category?: QuestionCategory
+  is_active: boolean
+  created_at: string
+  updated_at: string
 }
 
 // ── 提醒 ──────────────────────────────────────────────────────────────────────

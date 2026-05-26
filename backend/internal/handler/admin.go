@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -247,4 +248,120 @@ func (h *AdminHandler) UpdatePromptConfig(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, cfg)
+}
+
+// ── 题库管理 ──────────────────────────────────────────────────────────────────
+
+// ListQuestions GET /api/admin/questions
+func (h *AdminHandler) ListQuestions(c *gin.Context) {
+	var questions []models.ReefQuestion
+	h.db.Order("created_at DESC").Find(&questions)
+	c.JSON(http.StatusOK, questions)
+}
+
+// CreateQuestion POST /api/admin/questions
+func (h *AdminHandler) CreateQuestion(c *gin.Context) {
+	var req struct {
+		Question    string          `json:"question"    binding:"required"`
+		Options     json.RawMessage `json:"options"     binding:"required"`
+		Answer      string          `json:"answer"      binding:"required"`
+		Explanation *string         `json:"explanation"`
+		Difficulty  string          `json:"difficulty"`
+		Category    *string         `json:"category"`
+		IsActive    *bool           `json:"is_active"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.Answer != "A" && req.Answer != "B" && req.Answer != "C" && req.Answer != "D" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "answer 必须为 A/B/C/D"})
+		return
+	}
+	if req.Difficulty == "" {
+		req.Difficulty = "medium"
+	}
+	isActive := true
+	if req.IsActive != nil {
+		isActive = *req.IsActive
+	}
+	q := models.ReefQuestion{
+		ID:          uuid.New(),
+		Question:    req.Question,
+		Options:     datatypes.JSON(req.Options),
+		Answer:      req.Answer,
+		Explanation: req.Explanation,
+		Difficulty:  req.Difficulty,
+		Category:    req.Category,
+		IsActive:    isActive,
+	}
+	if err := h.db.Create(&q).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, q)
+}
+
+// UpdateQuestion PUT /api/admin/questions/:id
+func (h *AdminHandler) UpdateQuestion(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	var q models.ReefQuestion
+	if err := h.db.First(&q, "id = ?", id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "题目不存在"})
+		return
+	}
+	var req struct {
+		Question    *string         `json:"question"`
+		Options     json.RawMessage `json:"options"`
+		Answer      *string         `json:"answer"`
+		Explanation *string         `json:"explanation"`
+		Difficulty  *string         `json:"difficulty"`
+		Category    *string         `json:"category"`
+		IsActive    *bool           `json:"is_active"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	updates := map[string]any{}
+	if req.Question != nil    { updates["question"] = *req.Question }
+	if req.Options != nil     { updates["options"] = datatypes.JSON(req.Options) }
+	if req.Answer != nil      { updates["answer"] = *req.Answer }
+	if req.Explanation != nil { updates["explanation"] = req.Explanation }
+	if req.Difficulty != nil  { updates["difficulty"] = *req.Difficulty }
+	if req.Category != nil    { updates["category"] = req.Category }
+	if req.IsActive != nil    { updates["is_active"] = *req.IsActive }
+
+	if len(updates) > 0 {
+		h.db.Model(&q).Updates(updates)
+	}
+	h.db.First(&q, "id = ?", id) // reload
+	c.JSON(http.StatusOK, q)
+}
+
+// DeleteQuestion DELETE /api/admin/questions/:id
+func (h *AdminHandler) DeleteQuestion(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	h.db.Delete(&models.ReefQuestion{}, "id = ?", id)
+	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
+}
+
+// ── 邀请关系 ──────────────────────────────────────────────────────────────────
+
+// ListInviteRelations GET /api/admin/invite-relations
+// 返回所有用户的邀请关系树，用于后台可视化
+func (h *AdminHandler) ListInviteRelations(c *gin.Context) {
+	var users []models.User
+	h.db.Select(
+		"id, nickname, email, phone, my_invite_code, invited_by, registration_path, role, created_at",
+	).Order("created_at ASC").Find(&users)
+	c.JSON(http.StatusOK, users)
 }
