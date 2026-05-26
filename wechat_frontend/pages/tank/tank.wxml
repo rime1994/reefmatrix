@@ -1,0 +1,6 @@
+<!-- pages/tank/tank.wxml — 占位，后续实现 -->
+<view class="container">
+  <view class="empty">
+    <text>{{action}} 功能开发中…</text>
+  </view>
+</view>

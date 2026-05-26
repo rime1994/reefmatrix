@@ -3,10 +3,19 @@
 // ── 用户 ──────────────────────────────────────────────────────────────────────
 export interface User {
   id: string
-  phone: string
+  phone?: string
+  email?: string
+  username?: string
   nickname: string
   avatar_url?: string
   role: 'user' | 'admin'
+  my_invite_code?: string
+  invited_by?: string
+  registration_path?: string
+  timezone?: string
+  salinity_unit?: string
+  temp_unit?: string
+  theme?: string
   created_at: string
 }
 
@@ -141,6 +150,28 @@ export interface DoseResult {
 // ── 资产 ──────────────────────────────────────────────────────────────────────
 export type AssetCategory = 'fish' | 'coral' | 'invertebrate' | 'equipment' | 'other'
 export type AssetStatus = 'healthy' | 'sick' | 'sold' | 'dead' | 'transferred'
+export type EquipmentType = 'light' | 'wavemaker' | 'skimmer' | 'dosing_pump' | 'calcium_reactor' | 'pump' | 'other'
+
+export const EQUIPMENT_TYPE_LABEL: Record<EquipmentType, string> = {
+  light:           '灯',
+  wavemaker:       '造浪',
+  skimmer:         '蛋分',
+  dosing_pump:     '滴定泵',
+  calcium_reactor: '钙反应器',
+  pump:            '水泵',
+  other:           '其他',
+}
+
+// 每种设备类型对应的可记录参数字段，type='text' 表示文字输入
+export const EQUIPMENT_PARAMS: Record<EquipmentType, Array<{ key: string; label: string; unit: string; inputType?: 'text' }>> = {
+  light:           [{ key: 'photoperiod', label: '日开启时长', unit: '小时' }, { key: 'power', label: '运行功率', unit: 'W' }],
+  wavemaker:       [{ key: 'flow', label: '流量', unit: 'L/h' }, { key: 'mode', label: '模式', unit: '', inputType: 'text' }],
+  skimmer:         [{ key: 'foam_level', label: '产沫量', unit: '级(1-5)' }, { key: 'neck_height', label: '颈管高度', unit: 'mm' }],
+  dosing_pump:     [{ key: 'daily_dose_ml', label: '日添加量', unit: 'ml' }, { key: 'dose_count', label: '添加次数', unit: '次/天' }],
+  calcium_reactor: [{ key: 'co2_bps', label: 'CO₂气泡数', unit: '泡/秒' }, { key: 'outlet_ph', label: '出水pH', unit: '' }, { key: 'outlet_kh', label: '出水KH', unit: 'dKH' }],
+  pump:            [{ key: 'max_flow', label: '最大流量', unit: 'L/h' }, { key: 'power', label: '运行功率', unit: 'W' }],
+  other:           [{ key: 'value', label: '参数值', unit: '' }],
+}
 
 export interface Asset {
   id: string
@@ -148,6 +179,7 @@ export interface Asset {
   category: AssetCategory
   name: string
   species?: string
+  equipment_type?: EquipmentType
   quantity: number
   purchase_price?: number
   current_value?: number
@@ -155,6 +187,43 @@ export interface Asset {
   status: AssetStatus
   notes?: string
   image_url?: string
+  created_at: string
+  updated_at: string
+  latest_bio?: { size_cm?: number; growth_points?: number; recorded_at?: string }
+}
+
+export interface EquipmentLog {
+  id: string
+  asset_id: string
+  recorded_at: string
+  params: Record<string, number | string>
+  notes?: string
+  created_at: string
+}
+
+export interface BioMeasurement {
+  id: string
+  asset_id: string
+  recorded_at: string
+  size_cm?: number
+  growth_points?: number
+  notes?: string
+  created_at: string
+}
+
+// ── 题库 ──────────────────────────────────────────────────────────────────────
+export type QuestionDifficulty = 'easy' | 'medium' | 'hard'
+export type QuestionCategory = 'chemistry' | 'biology' | 'equipment' | 'husbandry'
+
+export interface ReefQuestion {
+  id: string
+  question: string
+  options: string[]   // JSON array ["选项A", "选项B", "选项C", "选项D"]
+  answer: 'A' | 'B' | 'C' | 'D'
+  explanation?: string
+  difficulty: QuestionDifficulty
+  category?: QuestionCategory
+  is_active: boolean
   created_at: string
   updated_at: string
 }

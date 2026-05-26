@@ -1,2 +1,13 @@
 * { box-sizing: border-box; }
 body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+
+/* AI 分析 Markdown 渲染样式 */
+.ai-markdown { font-size: 14px; line-height: 1.8; color: #262626; }
+.ai-markdown h1, .ai-markdown h2, .ai-markdown h3 { margin: 16px 0 8px; font-weight: 600; color: #141414; }
+.ai-markdown h3 { font-size: 15px; }
+.ai-markdown p { margin: 6px 0; }
+.ai-markdown ul, .ai-markdown ol { padding-left: 20px; margin: 6px 0; }
+.ai-markdown li { margin: 4px 0; }
+.ai-markdown strong { color: #141414; }
+.ai-markdown code { background: #f0f0f0; padding: 1px 5px; border-radius: 3px; font-size: 13px; }
+.ai-markdown hr { border: none; border-top: 1px solid #f0f0f0; margin: 12px 0; }

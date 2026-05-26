@@ -26,7 +26,7 @@ export default function RemindersPage() {
 
   const { data: reminders, isLoading } = useQuery({
     queryKey: ['reminders'],
-    queryFn: remindersApi.list,
+    queryFn: (): Promise<Reminder[]> => remindersApi.list(),
   })
 
   const { data: due } = useQuery({

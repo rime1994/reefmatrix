@@ -17,6 +17,14 @@ type Config struct {
 	Env           string // 运行环境：development | production
 	AdminPhone    string // 初始管理员手机号，首次启动时自动创建
 	AdminPassword string // 初始管理员密码，首次启动后请立即修改
+	WxAppID       string // 微信小程序 AppID
+	WxAppSecret   string // 微信小程序 AppSecret
+	// SMTP 邮件发送（development 模式下可留空，使用 console 输出代替）
+	SMTPHost     string // SMTP 服务器主机，如 smtp.qq.com
+	SMTPPort     string // SMTP 端口，如 465（SSL）或 587（TLS）
+	SMTPUser     string // SMTP 登录用户名（通常是邮件地址）
+	SMTPPassword string // SMTP 授权码
+	SMTPFrom     string // 发件人地址，如 noreply@reefmatrix.com
 }
 
 // Load 从环境变量读取配置，未设置时使用括号内的默认值
@@ -32,6 +40,13 @@ func Load() *Config {
 		Env:           getEnv("ENV", "development"),
 		AdminPhone:    getEnv("ADMIN_PHONE", "admin"),
 		AdminPassword: getEnv("ADMIN_PASSWORD", "Admin@123"),
+		WxAppID:       getEnv("WX_APP_ID", ""),
+		WxAppSecret:   getEnv("WX_APP_SECRET", ""),
+		SMTPHost:     getEnv("SMTP_HOST", ""),
+		SMTPPort:     getEnv("SMTP_PORT", "465"),
+		SMTPUser:     getEnv("SMTP_USER", ""),
+		SMTPPassword: getEnv("SMTP_PASSWORD", ""),
+		SMTPFrom:     getEnv("SMTP_FROM", "noreply@reefmatrix.com"),
 	}
 }
 
