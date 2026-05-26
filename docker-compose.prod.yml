@@ -20,25 +20,13 @@ services:
       timeout: 5s
       retries: 5
 
-  migrate:
-    image: migrate/migrate:v4.17.1
-    depends_on:
-      postgres:
-        condition: service_healthy
-    volumes:
-      - ./backend/migrations:/migrations
-    command: >
-      -path=/migrations
-      -database=postgres://${DB_USER:-reefmatrix}:${DB_PASSWORD}@postgres:5432/${DB_NAME:-reefmatrix}?sslmode=disable
-      up
-    restart: on-failure
-
   backend:
     image: ghcr.io/rime1994/reefmatrix-backend:latest
     restart: unless-stopped
+    # migrations 已内置于镜像，backend 启动时自动执行 database.Migrate(db)
     depends_on:
-      migrate:
-        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
     environment:
       ENV: production
       DB_HOST: postgres
