@@ -49,3 +49,6 @@ Thumbs.db
 
 # Claude Code working directory
 .claude/
+
+# 微信小程序（本地开发，不上传 GitHub）
+wechat_frontend/
