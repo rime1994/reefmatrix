@@ -29,6 +29,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -36,6 +39,8 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./backend
+          # Go 在 builder 阶段用原生 x86 交叉编译，无需 QEMU，速度快
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ${{ env.BACKEND_IMAGE }}:latest
@@ -61,6 +66,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -68,6 +76,8 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
+          # Node 构建与平台无关（产物是静态文件），只需 nginx 层多架构
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ${{ env.FRONTEND_IMAGE }}:latest
